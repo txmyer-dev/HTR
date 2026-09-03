@@ -1,0 +1,42 @@
+# The install file. This IS the tenant model: adding a client is adding a block here plus its
+# secrets in the environment. If a tenant ever needs code, the design failed.
+#
+# Client zero is Tony's own number for a week. Fill the numbers and the adapters this afternoon;
+# until then the console adapters run the whole loop locally (`pytest`, or the dev server).
+tenants:
+  tony:
+    display_name: "Tony Myers"
+    timezone: "America/New_York"
+    numbers: ["+10000000000"]            # the Twilio number callers and texters reach (fill in)
+    business_hours: { start: "09:00", end: "17:00", days: [mon, tue, wed, thu, fri] }
+    escalation_phone: "+10000000000"     # where transfer_to_human hands off (fill in)
+    booking_link: "https://calendar.app.google/PzY2EQVcyDDQ2GY9A"
+
+    owner:
+      name: Tony
+      phone: "+10000000000"              # THE identity: every ruling is checked against this number
+      names: [Tony, Tony Myers]          # how people address the owner (the reader looks for these)
+      digest_at: "17:00"                 # local time, or "immediate" (text me as soon as a draft exists)
+      quiet_hours: ["21:00", "08:00"]
+      default_deadline_days: 2
+      summary_after_call: true           # the switchboard behaviour: one summary text per call
+      voice_rulings: false               # release 2
+      autonomy_tier: 0                   # 0 = everything above the line is ruled
+      disclose_assistant: true
+
+    adapters:
+      calendar: local        # local | google (release 2)
+      contacts: local
+      messaging: console     # console (dev) | twilio | ntfy (voice-only, owner push only)
+      voice: retell
+      llm: template          # template (no model, deterministic) | openai_compat (Omniroute or any OpenAI-shaped gateway)
+      agent_name: Ekko       # who answers the phone
+      voice_id: 11labs-Adrian
+
+    secrets:                 # names of env vars, never values; see .env.example
+      voice_webhook_secret: HTR_TONY_RETELL_SECRET
+      twilio_account_sid: TWILIO_ACCOUNT_SID
+      twilio_auth_token: TWILIO_AUTH_TOKEN
+      twilio_api_key_sid: TWILIO_API_KEY_SID
+      twilio_api_key_secret: TWILIO_API_KEY_SECRET
+      twilio_from_number: TWILIO_FROM_NUMBER

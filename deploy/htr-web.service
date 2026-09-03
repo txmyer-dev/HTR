@@ -1,0 +1,18 @@
+[Unit]
+Description=htr web (FastAPI)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=htr
+WorkingDirectory=/opt/htr
+Environment=PYTHONPATH=/opt/htr/src
+EnvironmentFile=/etc/htr/env
+# 0.0.0.0 is deliberate: Traefik (Dokploy) proxies from inside a container and cannot
+# reach the host's loopback. Block 8001 from the WAN at the firewall instead.
+ExecStart=/opt/htr/.venv/bin/python -m uvicorn --factory htr.web.app:create_app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

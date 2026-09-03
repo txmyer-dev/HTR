@@ -1,0 +1,16 @@
+[Unit]
+Description=htr worker (jobs + heartbeat)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=htr
+WorkingDirectory=/opt/htr
+Environment=PYTHONPATH=/opt/htr/src
+EnvironmentFile=/etc/htr/env
+ExecStart=/opt/htr/.venv/bin/python -m htr.worker
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
