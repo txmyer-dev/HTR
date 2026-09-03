@@ -172,7 +172,19 @@ def provision(tenant_id: str, dry_run: bool = False) -> dict:
         agent_id = r.json()["agent_id"]
 
     state[tenant_id] = {"llm_id": llm_id, "agent_id": agent_id}
-    STATE_FILE.write_text(yaml.safe_dump(state))
+    # Bind the tenant's line(s) to the new agent. Retell replaced the single-agent fields with
+    # weighted agent lists (deprecation 2026-03-31); one agent at weight 1 is the whole list.
+    with httpx.Client(base_url=RETELL_BASE, headers={"Authorization": f"Bearer {key}"}, timeout=30) as client:
+        version = client.get(f"/get-agent/{agent_id}").json().get("version", 0)
+        for number in tenant.numbers:
+            r = client.patch(f"/update-phone-number/{number}", json={
+                "inbound_agents": [{"agent_id": agent_id, "agent_version": version, "weight": 1}],
+                "nickname": f"htr {tenant.id}"})
+            if r.status_code == 200:
+                print(f"bound {number} -> {agent_id} (v{version})")
+            else:
+                print(f"could not bind {number}: HTTP {r.status_code} {r.text[:160]} (bind it in the dashboard)")
+    STATE_FILE.write_text(yaml.safe_dump(state), encoding="utf-8")
     print(f"provisioned {tenant_id}: agent {agent_id} (llm {llm_id}) -> {STATE_FILE.name}")
     return state[tenant_id]
 
