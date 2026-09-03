@@ -44,6 +44,22 @@ behind whatever reverse proxy the host already has.
 5. Text `?` to your own number's assistant. If a digest (or "Nothing waiting on you.") comes
    back, the loop is closed.
 
+## Deploy behind n8n (client zero)
+
+HTR never gets a public hostname. n8n is the front door: its webhook nodes forward Retell's
+calls and the ntfy ruling buttons to `http://htr-web:8000` on the proxy's overlay network.
+
+```bash
+# on the VPS
+git clone git@github.com:txmyer-dev/HTR.git /opt/htr && cd /opt/htr && cp /path/to/.env .env
+docker compose -f compose.yml -f deploy/compose.vps.yml up -d --build
+docker cp deploy/n8n-front-door.json n8n:/tmp/ && docker exec n8n n8n import:workflow --input=/tmp/n8n-front-door.json
+```
+
+Then `HTR_PUBLIC_URL=https://<n8n>/webhook/htr` makes the Retell tool URLs
+`https://<n8n>/webhook/htr/webhooks/<tenant>/tool`, and `HTR_RULING_URL=https://<n8n>/webhook/htr/rule`
+makes each Send / Skip button a signed link the workflow forwards to `/rulings/...`.
+
 ## The surface
 
 | Route | Called by | Does |
@@ -52,6 +68,7 @@ behind whatever reverse proxy the host already has.
 | `POST /webhooks/{tenant}/call-ended` | Retell | stores the transcript, enqueues post-call once |
 | `POST /webhooks/{tenant}/sms` | Twilio | from the owner's number: a ruling; from anyone else: an inbound text |
 | `POST /webhooks/{tenant}/sms-status` | Twilio | delivery receipts |
+| `GET|POST /rulings/{tenant}/{id}/{sign|reject}?t=` | the Send / Skip buttons (via n8n) | one tap rules; token-signed |
 | `GET /tenants/{tenant}/calls` | you | the read-only call log |
 | `GET /tenants/{tenant}/proposals` | you | every proposal and its status |
 | `GET /tenants/{tenant}/jobs` | you | job status |

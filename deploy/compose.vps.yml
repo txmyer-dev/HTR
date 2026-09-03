@@ -1,0 +1,16 @@
+# VPS override: HTR is never published. It joins the proxy's overlay network so n8n (the public
+# front door) reaches the web service as http://htr-web:8000. Use with the base file:
+#
+#   docker compose -f compose.yml -f deploy/compose.vps.yml up -d --build
+#
+services:
+  web:
+    container_name: htr-web
+    networks: [default, dokploy-network]
+  worker:
+    container_name: htr-worker
+    networks: [default]
+
+networks:
+  dokploy-network:
+    external: true
