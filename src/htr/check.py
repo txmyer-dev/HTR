@@ -124,9 +124,9 @@ def main(argv: list[str] | None = None) -> int:
     loaded = load_dotenv()
     registry = TenantRegistry.load()
     tenant = registry.get(args.tenant) if args.tenant else registry.all()[0]
-    print(f"install: {tenant.id} ({tenant.display_name}) · owner {tenant.owner.phone} · "
+    print(f"install: {tenant.id} ({tenant.display_name}) | owner {tenant.owner.phone} | "
           f"adapters {json.dumps({k: v for k, v in tenant.adapters.items() if k in ('messaging', 'voice', 'llm')})}")
-    print(f".env: {len(loaded)} keys loaded · db {os.environ.get('HTR_DATABASE_URL', 'sqlite:///htr.db')}")
+    print(f".env: {len(loaded)} keys loaded | db {os.environ.get('HTR_DATABASE_URL', 'sqlite:///htr.db')}")
     results = {}
     for name in [n.strip() for n in args.only.split(",") if n.strip()]:
         fn = CHECKS.get(name)
