@@ -261,3 +261,37 @@ def test_no_buttons_without_a_ruling_url(client, engine, registry, monkeypatch):
     _take_message_and_end_call(client)
     drain(engine, registry)
     assert ConsoleMessaging.actions_sent == []
+
+
+# ---------------------------------------------------------------- owner channel vs counterparty channel
+
+def test_ntfy_only_install_never_sends_a_draft_to_the_owner_by_mistake(engine, tmp_path, monkeypatch):
+    """Owner on ntfy, no counterparty channel: digests and buttons reach the owner; a signed
+    draft fails loudly instead of landing on the owner's phone as if it were the caller's."""
+    from fastapi.testclient import TestClient
+    from htr.config import TenantRegistry
+    from htr.web.app import create_app
+    f = tmp_path / "i.yaml"
+    f.write_text("""
+tenants:
+  solo:
+    display_name: "Solo"
+    numbers: ["+15550000005"]
+    owner: { name: Solo, phone: "+15550000059", digest_at: immediate }
+    adapters: { messaging: none, owner_messaging: console, voice: retell, llm: template }
+""", encoding="utf-8")
+    registry = TenantRegistry.load(f)
+    ConsoleMessaging.clear()
+    c = TestClient(create_app(engine, registry))
+    c.post("/webhooks/solo/tool", json=tool_body("take_message", {"message": "quote?"}, from_number="+15550007777", to_number="+15550000005"))
+    c.post("/webhooks/solo/call-ended", json=ended_body(from_number="+15550007777", to_number="+15550000005"))
+    drain(engine, registry)
+    store = ProposalStore(engine)
+    (p,) = store.pending("solo")
+    assert any(t.startswith("1 waiting on you.") for t in texts_to("+15550000059"))
+    c.post("/webhooks/solo/sms", data={"From": "+15550000059", "To": "+15550000005", "Body": "1", "MessageSid": "x"})
+    assert store.get(p.id).status == "signed"
+    drain(engine, registry)
+    assert store.get(p.id).status == "failed" and "no channel can text callers" in store.get(p.id).error
+    assert texts_to("+15550007777") == []                       # nothing went anywhere as the caller
+    assert not any(t == p.body for t in texts_to("+15550000059"))  # and not to the owner either

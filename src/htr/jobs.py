@@ -61,7 +61,8 @@ def make_rulings(engine) -> Rulings:
         with engine.begin() as conn:
             enqueue(conn, tenant_id, "dispatch", {"proposal_id": proposal_id})
 
-    return Rulings(engine, store, adapters.messaging_for, enqueue_dispatch)
+    return Rulings(engine, store, adapters.owner_messaging_for, enqueue_dispatch,
+                   counterparty_messaging_for=adapters.messaging_for)
 
 
 # ---------------------------------------------------------------- handlers
@@ -84,7 +85,7 @@ def _post_call(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) 
         if call["summary"]:
             lines.append(call["summary"])
         lines += [f"Message: {m['body']}" for m in msgs]
-        adapters.messaging_for(tenant).send_sms(tenant.owner.phone, "\n".join(lines)[:1500])
+        adapters.owner_messaging_for(tenant).send_sms(tenant.owner.phone, "\n".join(lines)[:1500])
 
     with engine.begin() as conn:
         append_event(conn, tenant.id, "post_call.done", {"messages": len(msgs)}, call_id=call_id)
@@ -162,10 +163,16 @@ def _dispatch(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -
         p = store.retry(pid) or p
     if p.status != SIGNED:
         return                                       # already sent, or never signed: nothing to do
+    messenger = adapters.messaging_for(tenant)
+    if not getattr(messenger, "can_text_callers", False):
+        # signed, but nothing can carry it to the caller yet: fail loudly, keep it retryable
+        if store.begin_send(pid) is not None:
+            store.mark_failed(pid, "no channel can text callers (adapters.messaging)")
+        raise RuntimeError(f"proposal {pid}: no channel can text callers")
     if store.begin_send(pid) is None:
         return
     try:
-        ref = adapters.messaging_for(tenant).send_sms(p.to_number, p.body)
+        ref = messenger.send_sms(p.to_number, p.body)
     except Exception as exc:                         # noqa: BLE001
         store.mark_failed(pid, repr(exc))
         jsonl.append("rulings", {"tenant": tenant.id, "proposal": pid, "verdict": "send_failed", "error": repr(exc)})
@@ -203,7 +210,7 @@ def _heartbeat(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) 
     if problems:
         operator = os.environ.get("HTR_OPERATOR_PHONE")
         if operator:
-            adapters.messaging_for(tenant).send_sms(
+            adapters.owner_messaging_for(tenant).send_sms(
                 operator, f"[htr] {tenant.id} heartbeat FAILED: " + "; ".join(problems))
         raise RuntimeError("; ".join(problems))
 

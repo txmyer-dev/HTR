@@ -27,7 +27,8 @@ tenants:
     adapters:
       calendar: local        # local | google (release 2)
       contacts: local
-      messaging: ntfy        # ntfy (owner push, no SMS to callers) | twilio | console (dev)
+      messaging: none        # the counterparty channel: none (until Twilio / Retell SMS) | twilio | console (dev)
+      owner_messaging: ntfy  # the owner's channel: ntfy (push + Send/Skip buttons) | twilio | console
       voice: retell
       llm: openai_compat     # openai_compat (Omniroute) | template (no model, deterministic; what the tests use)
       agent_name: Ekko       # who answers the phone

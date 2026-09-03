@@ -22,6 +22,7 @@ def contacts_for(tenant: Tenant, engine):
 
 
 def messaging_for(tenant: Tenant):
+    """The counterparty channel: what a signed draft goes out on."""
     kind = tenant.adapters.get("messaging", "console")
     if kind == "console":
         from .messaging_console import ConsoleMessaging
@@ -32,7 +33,29 @@ def messaging_for(tenant: Tenant):
     if kind == "twilio":
         from .messaging_twilio import TwilioMessaging
         return TwilioMessaging(tenant.secrets)
+    if kind == "none":
+        from .messaging_console import NoMessaging
+        return NoMessaging()
     raise KeyError(f"unknown messaging adapter: {kind}")
+
+
+def owner_messaging_for(tenant: Tenant):
+    """The owner's channel: digests, buttons, confirmations, pages. Defaults to the counterparty
+    channel, so a Twilio-only install needs nothing extra; an ntfy install sets `owner_messaging: ntfy`
+    and keeps `messaging` for callers."""
+    if "owner_messaging" not in tenant.adapters:
+        return messaging_for(tenant)
+    kind = tenant.adapters["owner_messaging"]
+    if kind == "ntfy":
+        from .messaging_ntfy import NtfyMessaging
+        return NtfyMessaging()
+    if kind == "console":
+        from .messaging_console import ConsoleMessaging
+        return ConsoleMessaging()
+    if kind == "twilio":
+        from .messaging_twilio import TwilioMessaging
+        return TwilioMessaging(tenant.secrets)
+    raise KeyError(f"unknown owner_messaging adapter: {kind}")
 
 
 def voice_for(tenant: Tenant):

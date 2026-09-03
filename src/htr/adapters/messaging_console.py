@@ -29,3 +29,12 @@ class ConsoleMessaging:
     def clear(cls) -> None:
         cls.sent.clear()
         cls.actions_sent.clear()
+
+
+class NoMessaging:
+    """No counterparty channel yet (`messaging: none`). Anything that would go out to a caller
+    fails loudly instead of quietly landing somewhere else."""
+    can_text_callers = False
+
+    def send_sms(self, to: str, body: str) -> str:
+        raise RuntimeError("no counterparty channel is configured (adapters.messaging is none)")

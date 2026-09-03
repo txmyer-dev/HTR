@@ -1,11 +1,11 @@
 {
   "id": "HTRFrontDoor0001",
-  "name": "HTR front door",
+  "name": "HTR front door (tony)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "htr/webhooks/:tenant/tool",
+        "path": "htr/webhooks/tony/tool",
         "responseMode": "responseNode",
         "options": {
           "rawBody": false
@@ -24,7 +24,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=http://htr-web:8000/webhooks/{{ $json.params.tenant }}/tool",
+        "url": "=http://htr-web:8000/webhooks/tony/tool",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -74,7 +74,7 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "htr/webhooks/:tenant/call-ended",
+        "path": "htr/webhooks/tony/call-ended",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -91,7 +91,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "=http://htr-web:8000/webhooks/{{ $json.params.tenant }}/call-ended",
+        "url": "=http://htr-web:8000/webhooks/tony/call-ended",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [

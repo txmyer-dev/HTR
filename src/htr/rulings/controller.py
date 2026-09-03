@@ -49,10 +49,12 @@ HELP = ("I read replies like: \"1\" or \"1 yes\" to send draft 1, \"2 no\" to sk
 
 class Rulings:
     def __init__(self, engine: sa.Engine, store: ProposalStore, messaging_for: Callable,
-                 enqueue_dispatch: Callable[[str, int], None], now: Callable[[], datetime] | None = None):
+                 enqueue_dispatch: Callable[[str, int], None], now: Callable[[], datetime] | None = None,
+                 counterparty_messaging_for: Callable | None = None):
         self.engine = engine
         self.store = store
-        self.messaging_for = messaging_for
+        self.messaging_for = messaging_for                       # the owner's channel
+        self.counterparty_messaging_for = counterparty_messaging_for or messaging_for
         self.enqueue_dispatch = enqueue_dispatch
         self.now = now or utcnow
 
@@ -219,7 +221,9 @@ class Rulings:
                                       {"to": p.to_number, "reason": "expired"})
                 append_event(conn, tenant.id, "proposal.expired", {"proposal_id": p.id})
             if first:
-                self.messaging_for(tenant).send_sms(p.to_number, hold_notice(tenant))
+                out = self.counterparty_messaging_for(tenant)
+                if getattr(out, "can_text_callers", False):
+                    out.send_sms(p.to_number, hold_notice(tenant))
             self.store.propose(tenant.id, p.to_number, p.body, to_name=p.to_name, basis=p.basis,
                                source_kind="relist", source_id=str(p.id), deadline=None, kind=p.kind)
             jsonl.append("rulings", {"tenant": tenant.id, "proposal": p.id, "verdict": "expired"})
