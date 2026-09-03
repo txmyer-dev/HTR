@@ -1,4 +1,5 @@
 {
+  "id": "HTRFrontDoor0001",
   "name": "HTR front door",
   "nodes": [
     {
@@ -6,29 +7,70 @@
         "httpMethod": "POST",
         "path": "htr/webhooks/:tenant/tool",
         "responseMode": "responseNode",
-        "options": { "rawBody": false }
+        "options": {
+          "rawBody": false
+        }
       },
-      "id": "wh-tool", "name": "Retell tool call", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
-      "position": [0, 0], "webhookId": "htr-tool"
+      "id": "wh-tool",
+      "name": "Retell tool call",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "htr-tool"
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=http://htr-web:8000/webhooks/{{ $json.params.tenant }}/tool",
         "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "x-retell-secret", "value": "={{ $json.headers['x-retell-secret'] || '' }}" } ] },
-        "sendBody": true, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": { "timeout": 5000, "response": { "response": { "fullResponse": false, "neverError": true } } }
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-retell-secret",
+              "value": "={{ $json.headers['x-retell-secret'] || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 5000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": true
+            }
+          }
+        }
       },
-      "id": "fw-tool", "name": "Forward tool call", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-      "position": [260, 0]
+      "id": "fw-tool",
+      "name": "Forward tool call",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ]
     },
     {
-      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify($json) }}", "options": {} },
-      "id": "rs-tool", "name": "Answer Retell (tool)", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
-      "position": [520, 0]
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "rs-tool",
+      "name": "Answer Retell (tool)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        0
+      ]
     },
-
     {
       "parameters": {
         "httpMethod": "POST",
@@ -36,63 +78,215 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "wh-ended", "name": "Retell call ended", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
-      "position": [0, 200], "webhookId": "htr-call-ended"
+      "id": "wh-ended",
+      "name": "Retell call ended",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "htr-call-ended"
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=http://htr-web:8000/webhooks/{{ $json.params.tenant }}/call-ended",
         "sendHeaders": true,
-        "headerParameters": { "parameters": [ { "name": "x-retell-secret", "value": "={{ $json.headers['x-retell-secret'] || '' }}" } ] },
-        "sendBody": true, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": { "timeout": 10000, "response": { "response": { "fullResponse": false, "neverError": true } } }
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-retell-secret",
+              "value": "={{ $json.headers['x-retell-secret'] || '' }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": true
+            }
+          }
+        }
       },
-      "id": "fw-ended", "name": "Forward call ended", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-      "position": [260, 200]
+      "id": "fw-ended",
+      "name": "Forward call ended",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        200
+      ]
     },
     {
-      "parameters": { "respondWith": "json", "responseBody": "={{ JSON.stringify($json) }}", "options": {} },
-      "id": "rs-ended", "name": "Answer Retell (ended)", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
-      "position": [520, 200]
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "rs-ended",
+      "name": "Answer Retell (ended)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        200
+      ]
     },
-
     {
       "parameters": {
         "multipleMethods": true,
-        "httpMethod": ["GET", "POST"],
+        "httpMethod": [
+          "GET",
+          "POST"
+        ],
         "path": "htr/rule/:tenant/:pid/:verdict",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "wh-rule", "name": "Ruling button", "type": "n8n-nodes-base.webhook", "typeVersion": 2,
-      "position": [0, 400], "webhookId": "htr-rule"
+      "id": "wh-rule",
+      "name": "Ruling button",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "htr-rule"
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=http://htr-web:8000/rulings/{{ $json.params.tenant }}/{{ $json.params.pid }}/{{ $json.params.verdict }}",
         "sendQuery": true,
-        "queryParameters": { "parameters": [ { "name": "t", "value": "={{ $json.query.t || '' }}" } ] },
-        "options": { "timeout": 10000, "response": { "response": { "fullResponse": false, "neverError": true, "responseFormat": "text" } } }
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "t",
+              "value": "={{ $json.query.t || '' }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          }
+        }
       },
-      "id": "fw-rule", "name": "Forward ruling", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2,
-      "position": [260, 400]
+      "id": "fw-rule",
+      "name": "Forward ruling",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        400
+      ]
     },
     {
-      "parameters": { "respondWith": "text", "responseBody": "={{ $json.data }}", "options": { "responseHeaders": { "entries": [ { "name": "Content-Type", "value": "text/html; charset=utf-8" } ] } } },
-      "id": "rs-rule", "name": "Answer the phone", "type": "n8n-nodes-base.respondToWebhook", "typeVersion": 1.1,
-      "position": [520, 400]
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.data }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "rs-rule",
+      "name": "Answer the phone",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        400
+      ]
     }
   ],
   "connections": {
-    "Retell tool call":   { "main": [[ { "node": "Forward tool call",  "type": "main", "index": 0 } ]] },
-    "Forward tool call":  { "main": [[ { "node": "Answer Retell (tool)", "type": "main", "index": 0 } ]] },
-    "Retell call ended":  { "main": [[ { "node": "Forward call ended", "type": "main", "index": 0 } ]] },
-    "Forward call ended": { "main": [[ { "node": "Answer Retell (ended)", "type": "main", "index": 0 } ]] },
-    "Ruling button":      { "main": [[ { "node": "Forward ruling", "type": "main", "index": 0 } ]] },
-    "Forward ruling":     { "main": [[ { "node": "Answer the phone", "type": "main", "index": 0 } ]] }
+    "Retell tool call": {
+      "main": [
+        [
+          {
+            "node": "Forward tool call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward tool call": {
+      "main": [
+        [
+          {
+            "node": "Answer Retell (tool)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retell call ended": {
+      "main": [
+        [
+          {
+            "node": "Forward call ended",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward call ended": {
+      "main": [
+        [
+          {
+            "node": "Answer Retell (ended)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ruling button": {
+      "main": [
+        [
+          {
+            "node": "Forward ruling",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward ruling": {
+      "main": [
+        [
+          {
+            "node": "Answer the phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
   },
-  "settings": { "executionOrder": "v1" },
+  "settings": {
+    "executionOrder": "v1"
+  },
   "active": true
 }
