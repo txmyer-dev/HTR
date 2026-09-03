@@ -25,6 +25,7 @@ import httpx
 import yaml
 
 from ..config import Tenant, TenantRegistry
+from ..env import load_dotenv
 
 RETELL_BASE = "https://api.retellai.com"
 PROMPT_TEMPLATE = Path(__file__).resolve().parents[3] / "agents" / "retell" / "prompt.md"
@@ -177,6 +178,7 @@ def provision(tenant_id: str, dry_run: bool = False) -> dict:
 
 
 def main() -> None:
+    load_dotenv()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("tenant")
     ap.add_argument("--dry-run", action="store_true",

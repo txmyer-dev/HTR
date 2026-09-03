@@ -17,6 +17,7 @@ import sqlalchemy as sa
 
 from .config import Tenant, TenantRegistry
 from .db import digests, make_engine, proposals
+from .env import load_dotenv
 from .jobs import enqueue, enqueue_once, run_pending
 
 POLL_SECONDS = 2.0
@@ -68,6 +69,7 @@ def tick(engine, registry: TenantRegistry, state: dict[str, float]) -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
+    load_dotenv()
     engine = make_engine()
     registry = TenantRegistry.load()
     state: dict[str, float] = {}

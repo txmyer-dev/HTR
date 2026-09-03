@@ -27,9 +27,9 @@ tenants:
     adapters:
       calendar: local        # local | google (release 2)
       contacts: local
-      messaging: console     # console (dev) | twilio | ntfy (voice-only, owner push only)
+      messaging: ntfy        # ntfy (owner push, no SMS to callers) | twilio | console (dev)
       voice: retell
-      llm: template          # template (no model, deterministic) | openai_compat (Omniroute or any OpenAI-shaped gateway)
+      llm: openai_compat     # openai_compat (Omniroute) | template (no model, deterministic; what the tests use)
       agent_name: Ekko       # who answers the phone
       voice_id: 11labs-Adrian
 

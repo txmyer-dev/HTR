@@ -17,6 +17,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from .. import adapters
 from ..config import TenantRegistry
+from ..env import load_dotenv
 from ..db import calls, jobs as jobs_t, make_engine, messages, proposals as proposals_t, utcnow
 from ..events import append_event, record_action
 from ..jobs import enqueue, make_rulings
@@ -28,6 +29,8 @@ TWIML_EMPTY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>"
 
 def create_app(engine: sa.Engine | None = None,
                registry: TenantRegistry | None = None) -> FastAPI:
+    if engine is None or registry is None:
+        load_dotenv()
     engine = engine or make_engine()
     registry = registry or TenantRegistry.load()
     app = FastAPI(title="hold-the-room", version="0.1.0")
