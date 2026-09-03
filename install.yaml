@@ -7,14 +7,14 @@ tenants:
   tony:
     display_name: "Tony Myers"
     timezone: "America/New_York"
-    numbers: ["+10000000000"]            # the Twilio number callers and texters reach (fill in)
+    numbers: ["+12762778988"]          # the Retell-provisioned line callers reach
     business_hours: { start: "09:00", end: "17:00", days: [mon, tue, wed, thu, fri] }
-    escalation_phone: "+10000000000"     # where transfer_to_human hands off (fill in)
+    escalation_phone: "+12156148604"   # transfer_to_human hands off to Tony's cell
     booking_link: "https://calendar.app.google/PzY2EQVcyDDQ2GY9A"
 
     owner:
       name: Tony
-      phone: "+10000000000"              # THE identity: every ruling is checked against this number
+      phone: "+12156148604"              # THE identity: every ruling is checked against this number
       names: [Tony, Tony Myers]          # how people address the owner (the reader looks for these)
       digest_at: immediate               # client zero: text me as soon as a draft exists (later: "17:00")
       quiet_hours: ["21:00", "08:00"]
