@@ -218,3 +218,46 @@ def test_digest_is_due_once_per_local_day(engine, registry, store, monkeypatch):
     store.propose("tony", "+2", "y")
     next_day = at_6pm + timedelta(days=1)
     assert digest_due(engine, tony, next_day)
+
+
+# ---------------------------------------------------------------- rulings by button (ntfy)
+
+def test_digest_carries_send_skip_buttons_and_buttons_rule(client, engine, registry, store, monkeypatch):
+    monkeypatch.setenv("HTR_RULING_URL", "https://n8n.example/webhook/htr/rule")
+    monkeypatch.setenv("HTR_RULING_SECRET", "s3cret")
+    _take_message_and_end_call(client, "Can you quote the fence?", "call-1", "+15550002222")
+    _take_message_and_end_call(client, "Open Saturday?", "call-2", "+15550003333")
+    drain(engine, registry)
+    a, b = store.pending("tony")
+    # one notification per draft, two buttons each, signed URLs
+    assert [t for t, _, _ in ConsoleMessaging.actions_sent] == ["1 - +15550002222", "2 - +15550003333"]
+    _, body, actions = ConsoleMessaging.actions_sent[0]
+    assert body == a.body and [label for label, _ in actions] == ["Send", "Skip"]
+    send_url = actions[0][1]
+    assert send_url.startswith(f"https://n8n.example/webhook/htr/rule/tony/{a.id}/sign?t=")
+
+    # a forged or swapped token is refused
+    token = send_url.split("t=")[1]
+    assert client.post(f"/rulings/tony/{a.id}/reject?t={token}").status_code == 401
+    assert client.post(f"/rulings/tony/{b.id}/sign?t={token}").status_code == 401
+    assert client.post(f"/rulings/tony/{a.id}/sign?t=nope").status_code == 401
+
+    # the real button signs exactly once; the skip button rejects
+    r = client.post(f"/rulings/tony/{a.id}/sign?t={token}")
+    assert r.status_code == 200 and "Sending 1" in r.text
+    assert store.get(a.id).status == "signed"
+    assert "Sending 1" in texts_to(OWNER)[-1]
+    again = client.post(f"/rulings/tony/{a.id}/sign?t={token}").text
+    assert "Nothing waiting" in again
+    skip_url = ConsoleMessaging.actions_sent[1][2][1][1]
+    client.post(skip_url.replace("https://n8n.example/webhook/htr/rule", "/rulings"))
+    assert store.get(b.id).status == "rejected"
+    drain(engine, registry)
+    assert texts_to("+15550002222") == [a.body] and texts_to("+15550003333") == []
+
+
+def test_no_buttons_without_a_ruling_url(client, engine, registry, monkeypatch):
+    monkeypatch.delenv("HTR_RULING_URL", raising=False)
+    _take_message_and_end_call(client)
+    drain(engine, registry)
+    assert ConsoleMessaging.actions_sent == []

@@ -5,6 +5,7 @@ ruling arrives (from the owner's number) or an inbound text lands (from anyone e
 POST /webhooks/{tenant}/sms-status takes delivery receipts. Everything slow is a job."""
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import uuid
@@ -21,6 +22,8 @@ from ..env import load_dotenv
 from ..db import calls, jobs as jobs_t, make_engine, messages, proposals as proposals_t, utcnow
 from ..events import append_event, record_action
 from ..jobs import enqueue, make_rulings
+from ..rulings.controller import ruling_secret, ruling_token
+from ..rulings.parse import Verdict
 from ..tools import dispatch_tool
 
 log = logging.getLogger("htr.web")
@@ -140,6 +143,22 @@ def create_app(engine: sa.Engine | None = None,
             append_event(conn, tenant.id, "sms.status",
                          {"sid": params.get("MessageSid"), "status": params.get("MessageStatus")})
         return Response(status_code=204)
+
+    # ---- rulings by button ------------------------------------------------------------
+
+    @app.api_route("/rulings/{tenant_id}/{proposal_id}/{verdict}", methods=["GET", "POST"], response_class=HTMLResponse)
+    def rule_by_link(tenant_id: str, proposal_id: int, verdict: str, t: str = "") -> str:
+        """The target of a Send / Skip button. The token binds tenant, proposal, and verdict;
+        without the secret nobody can forge one, and a leaked link cannot rule on anything else."""
+        tenant = tenant_or_404(tenant_id)
+        if verdict not in ("sign", "reject"):
+            raise HTTPException(400, "verdict must be sign or reject")
+        secret = ruling_secret(tenant)
+        if not secret or not hmac.compare_digest(t, ruling_token(secret, tenant.id, proposal_id, verdict)):
+            raise HTTPException(401, "bad ruling token")
+        note = make_rulings(engine).rule_by_id(tenant, proposal_id, Verdict(verdict))
+        return (f"<html><body style='font-family:system-ui;margin:2rem;color:#1d222c'>"
+                f"<p>{note}</p></body></html>")
 
     # ---- read-only ------------------------------------------------------------------
 

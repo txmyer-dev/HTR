@@ -12,7 +12,10 @@ Two invariants carried over from Waggle:
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
+import os
 from datetime import datetime
 from typing import Callable
 
@@ -28,6 +31,17 @@ from ..proposals.store import PENDING, Proposal, ProposalStore
 from .parse import Verdict, parse_reply
 
 log = logging.getLogger("htr.rulings")
+
+def ruling_token(secret: str, tenant_id: str, proposal_id: int, verdict: str) -> str:
+    """The signature on a ruling button. A leaked notification cannot rule on anything else,
+    and cannot rule the other way."""
+    msg = f"{tenant_id}:{proposal_id}:{verdict}".encode()
+    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
+
+
+def ruling_secret(tenant: Tenant) -> str | None:
+    return tenant.secrets.get("ruling_secret") or os.environ.get("HTR_RULING_SECRET") or None
+
 
 HELP = ("I read replies like: \"1\" or \"1 yes\" to send draft 1, \"2 no\" to skip it, "
         "\"3 your own words\" to send those instead, \"all\", \"later\", \"hold\", or \"?\" for the list.")
@@ -63,8 +77,38 @@ class Rulings:
             digest_id = int(res.inserted_primary_key[0])
             append_event(conn, tenant.id, "digest.sent", {"digest_id": digest_id, "count": len(numbered)})
         self.store.assign_digest(digest_id, {p.id: n for n, p in numbered})
-        self.messaging_for(tenant).send_sms(tenant.owner.phone, body)
+        messenger = self.messaging_for(tenant)
+        messenger.send_sms(tenant.owner.phone, body)
+        self._send_buttons(tenant, messenger, numbered)
         return digest_id
+
+    def _send_buttons(self, tenant: Tenant, messenger, numbered: list[tuple[int, Proposal]]) -> None:
+        """One notification per draft with Send / Skip buttons, when the channel can carry them
+        and a public ruling URL plus a secret exist. Edits still need words from another channel."""
+        send = getattr(messenger, "send_with_actions", None)
+        base = os.environ.get("HTR_RULING_URL", "").rstrip("/")
+        secret = ruling_secret(tenant)
+        if send is None or not base or not secret:
+            return
+        for n, p in numbered:
+            who = p.to_name or p.to_number
+            actions = [(label, f"{base}/{tenant.id}/{p.id}/{verdict}?t={ruling_token(secret, tenant.id, p.id, verdict)}")
+                       for label, verdict in (("Send", "sign"), ("Skip", "reject"))]
+            try:
+                send(f"{n} - {who}", p.body, actions)
+            except Exception as exc:                                    # noqa: BLE001
+                log.warning("digest.buttons_failed", extra={"proposal": p.id, "error": repr(exc)})
+
+    def rule_by_id(self, tenant: Tenant, proposal_id: int, verdict: Verdict, via: str = "button") -> str:
+        """A ruling that names the proposal directly (a button), not a digest number."""
+        p = self.store.get(proposal_id)
+        if p is None or p.tenant_id != tenant.id or p.status != PENDING:
+            return "Nothing waiting under that draft."
+        note = self._apply(tenant, p, p.digest_no or p.id, verdict, p.digest_id, via, f"{via}:{verdict.kind}")
+        with self.engine.begin() as conn:
+            append_event(conn, tenant.id, "ruling.applied", {"rulings": 1, "via": via})
+        self.messaging_for(tenant).send_sms(tenant.owner.phone, note)
+        return note
 
     # ---- inbound: rulings ----------------------------------------------------
 

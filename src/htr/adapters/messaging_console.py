@@ -10,12 +10,17 @@ log = logging.getLogger("htr.sms")
 
 class ConsoleMessaging:
     can_text_callers = True
-    sent: list[tuple[str, str]] = []          # shared across instances, by design
+    sent: list[tuple[str, str]] = []                                   # shared across instances, by design
+    actions_sent: list[tuple[str, str, list[tuple[str, str]]]] = []    # (title, body, [(label, url)])
 
     def send_sms(self, to: str, body: str) -> str:
         ConsoleMessaging.sent.append((to, body))
         log.info("sms.send", extra={"to": to, "body": body})
         return f"console-{len(ConsoleMessaging.sent)}"
+
+    def send_with_actions(self, title: str, body: str, actions: list[tuple[str, str]]) -> str:
+        ConsoleMessaging.actions_sent.append((title, body, list(actions)))
+        return f"console-action-{len(ConsoleMessaging.actions_sent)}"
 
     def verify_inbound(self, url: str, params: dict[str, str], signature: str) -> bool:
         return True
@@ -23,3 +28,4 @@ class ConsoleMessaging:
     @classmethod
     def clear(cls) -> None:
         cls.sent.clear()
+        cls.actions_sent.clear()
