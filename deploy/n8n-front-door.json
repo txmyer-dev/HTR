@@ -41,7 +41,7 @@
           "timeout": 5000,
           "response": {
             "response": {
-              "fullResponse": false,
+              "fullResponse": true,
               "neverError": true
             }
           }
@@ -59,8 +59,10 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {}
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 200 }}"
+        }
       },
       "id": "rs-tool",
       "name": "Answer Retell (tool)",
@@ -108,7 +110,7 @@
           "timeout": 10000,
           "response": {
             "response": {
-              "fullResponse": false,
+              "fullResponse": true,
               "neverError": true
             }
           }
@@ -126,8 +128,10 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify($json) }}",
-        "options": {}
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.statusCode || 200 }}"
+        }
       },
       "id": "rs-ended",
       "name": "Answer Retell (ended)",
@@ -176,7 +180,7 @@
           "timeout": 10000,
           "response": {
             "response": {
-              "fullResponse": false,
+              "fullResponse": true,
               "neverError": true,
               "responseFormat": "text"
             }
@@ -195,7 +199,7 @@
     {
       "parameters": {
         "respondWith": "text",
-        "responseBody": "={{ $json.data }}",
+        "responseBody": "={{ $json.body }}",
         "options": {
           "responseHeaders": {
             "entries": [
@@ -204,7 +208,8 @@
                 "value": "text/html; charset=utf-8"
               }
             ]
-          }
+          },
+          "responseCode": "={{ $json.statusCode || 200 }}"
         }
       },
       "id": "rs-rule",
