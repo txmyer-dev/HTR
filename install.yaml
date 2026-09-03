@@ -16,7 +16,7 @@ tenants:
       name: Tony
       phone: "+10000000000"              # THE identity: every ruling is checked against this number
       names: [Tony, Tony Myers]          # how people address the owner (the reader looks for these)
-      digest_at: "17:00"                 # local time, or "immediate" (text me as soon as a draft exists)
+      digest_at: immediate               # client zero: text me as soon as a draft exists (later: "17:00")
       quiet_hours: ["21:00", "08:00"]
       default_deadline_days: 2
       summary_after_call: true           # the switchboard behaviour: one summary text per call

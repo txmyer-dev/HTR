@@ -49,7 +49,7 @@ def render_prompt(tenant: Tenant) -> str:
                         "aloud instead and take a message so "
                         f"{tenant.display_name.split()[0]} can send it directly.")
         send_link_route = ""
-    return PROMPT_TEMPLATE.read_text().format(
+    return PROMPT_TEMPLATE.read_text(encoding="utf-8").format(
         agent_name=agent,
         display_name=tenant.display_name,
         owner_first_name=tenant.display_name.split()[0],
@@ -150,7 +150,7 @@ def provision(tenant_id: str, dry_run: bool = False) -> dict:
         sys.exit("RETELL_API_KEY is not set (use --dry-run to inspect payloads without it)")
     headers = {"Authorization": f"Bearer {key}"}
 
-    state = yaml.safe_load(STATE_FILE.read_text()) if STATE_FILE.exists() else {}
+    state = yaml.safe_load(STATE_FILE.read_text(encoding="utf-8")) if STATE_FILE.exists() else {}
     state = state or {}
     existing = state.get(tenant_id, {})
 
