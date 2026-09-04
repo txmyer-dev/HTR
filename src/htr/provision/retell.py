@@ -64,8 +64,12 @@ def build_tools(tenant: Tenant, base_url: str) -> list[dict]:
     what transfer_to_human records. The URL is the whole integration."""
     url = f"{base_url.rstrip('/')}/webhooks/{tenant.id}/tool"
 
+    secret = tenant.secrets.get("voice_webhook_secret")
+    tool_headers = {"x-retell-secret": secret} if secret else {}
+
     def custom(name: str, description: str, parameters: dict, speak_during: bool = True) -> dict:
         return {
+            "headers": tool_headers, "timeout_ms": 5000,
             "type": "custom", "name": name, "description": description, "url": url,
             "speak_during_execution": speak_during, "speak_after_execution": True,
             "parameters": {"type": "object", **parameters},

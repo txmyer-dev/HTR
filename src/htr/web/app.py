@@ -77,10 +77,16 @@ def create_app(engine: sa.Engine | None = None,
         tenant = tenant_or_404(tenant_id)
         voice = adapters.voice_for(tenant)
         raw = await request.body()
-        if not voice.verify(tenant.secrets.get("voice_webhook_secret"),
-                            dict(request.headers), raw):
-            raise HTTPException(401, "bad signature")
-        ended = voice.parse_call_ended(await request.json())
+        verified = voice.verify(tenant.secrets.get("voice_webhook_secret"), dict(request.headers), raw)
+        body = await request.json()
+        if not verified:
+            confirm = getattr(voice, "confirm_call", None)
+            call = body.get("call", body)
+            if not (confirm and confirm(call.get("call_id", ""), call.get("from_number", ""), call.get("to_number", ""))):
+                raise HTTPException(401, "bad signature")
+        if body.get("event") and body["event"] != "call_ended":
+            return {"ok": True, "ignored": body["event"]}
+        ended = voice.parse_call_ended(body)
         with engine.begin() as conn:
             row = conn.execute(sa.select(calls.c.id, calls.c.ended_at)
                                .where(calls.c.id == ended.call_id)).first()

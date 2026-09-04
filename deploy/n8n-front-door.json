@@ -31,6 +31,10 @@
             {
               "name": "x-retell-secret",
               "value": "={{ $json.headers['x-retell-secret'] || '' }}"
+            },
+            {
+              "name": "x-retell-signature",
+              "value": "={{ $json.headers['x-retell-signature'] || '' }}"
             }
           ]
         },
@@ -100,6 +104,10 @@
             {
               "name": "x-retell-secret",
               "value": "={{ $json.headers['x-retell-secret'] || '' }}"
+            },
+            {
+              "name": "x-retell-signature",
+              "value": "={{ $json.headers['x-retell-signature'] || '' }}"
             }
           ]
         },
