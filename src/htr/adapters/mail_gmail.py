@@ -20,7 +20,24 @@ from ..ports.mail import InboundMail, OutboundMail
 
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 API = "https://gmail.googleapis.com/gmail/v1/users/me"
-AUTOMATED_HINTS = ("noreply", "no-reply", "donotreply", "mailer-daemon", "notifications@", "newsletter")
+AUTOMATED_HINTS = ("noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "notifications@",
+                   "notification@", "newsletter", "support@", "hello@", "info@", "team@", "news@", "digest@",
+                   "alerts@", "alert@", "billing@", "receipts@", "invoice", "-notes@", "notes@", "calendar-",
+                   "@ntfy.sh", "@devpost.com", "@fireflies.ai", "@google.com", "@github.com", "@discord.com")
+AUTOMATED_SUBJECTS = ("verify your email", "confirm your email", "your receipt", "your invoice", "password reset",
+                      "meeting recap", "notes: meeting", "security alert", "sign-in", "unsubscribe")
+# Gmail's own categorisation is the strongest signal: only Personal (or uncategorised) mail is a human writing to you.
+AUTOMATED_LABELS = ("CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS")
+
+
+def is_automated(from_address: str, subject: str, headers: dict[str, str], label_ids: list[str]) -> bool:
+    a, s = from_address.lower(), subject.lower()
+    return (any(x in a for x in AUTOMATED_HINTS) or any(x in s for x in AUTOMATED_SUBJECTS)
+            or any(lbl in AUTOMATED_LABELS for lbl in label_ids)
+            or "list-unsubscribe" in headers or "list-id" in headers
+            or headers.get("precedence", "").lower() in ("bulk", "list", "junk")
+            or headers.get("auto-submitted", "no").lower() != "no"
+            or headers.get("x-auto-response-suppress", "") != "")
 
 
 def _b64url(data: bytes) -> str:
@@ -76,7 +93,7 @@ class GmailMail:
     # ---- intake ----------------------------------------------------------------
 
     def pull(self, since: datetime | None = None, limit: int = 50) -> list[InboundMail]:
-        q = "in:inbox -from:me -category:promotions -category:social"
+        q = "in:inbox -from:me -category:promotions -category:social -category:updates -category:forums"
         if since:
             q += f" after:{int(since.timestamp())}"
         r = httpx.get(f"{API}/messages", headers=self._h(), params={"q": q, "maxResults": limit}, timeout=20)
@@ -88,9 +105,7 @@ class GmailMail:
             j = m.json()
             hdr = {h["name"].lower(): h["value"] for h in j.get("payload", {}).get("headers", [])}
             name, addr = parseaddr(hdr.get("from", ""))
-            automated = (any(x in addr.lower() for x in AUTOMATED_HINTS) or "list-unsubscribe" in hdr
-                         or hdr.get("precedence", "").lower() in ("bulk", "list", "junk")
-                         or hdr.get("auto-submitted", "no").lower() != "no")
+            automated = is_automated(addr, hdr.get("subject", ""), hdr, list(j.get("labelIds") or []))
             out.append(InboundMail(
                 id=j["id"], thread_id=j.get("threadId", ""), from_address=addr.lower(), from_name=name or None,
                 subject=hdr.get("subject", ""), text=_text_of(j.get("payload", {})).strip(),

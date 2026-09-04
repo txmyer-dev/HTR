@@ -58,7 +58,7 @@ def _extract_json(content: str) -> dict | None:
         text = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", text)
     for cand in (text, *re.findall(r"\{.*\}", text, flags=re.DOTALL)):
         try:
-            obj = json.loads(cand)
+            obj = json.loads(cand, strict=False)          # models put raw newlines inside strings
             if isinstance(obj, dict):
                 return obj
         except json.JSONDecodeError:
