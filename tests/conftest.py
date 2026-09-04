@@ -53,6 +53,8 @@ def registry(tmp_path):
 @pytest.fixture()
 def engine(tmp_path, monkeypatch):
     monkeypatch.setenv("HTR_DATA_DIR", str(tmp_path / "data"))
+    import htr.jobs
+    monkeypatch.setattr(htr.jobs, "DIGEST_DEBOUNCE_SECONDS", 0)      # tests want the digest now
     return make_engine(f"sqlite:///{tmp_path}/test.db")
 
 

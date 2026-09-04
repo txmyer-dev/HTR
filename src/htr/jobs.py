@@ -33,6 +33,7 @@ from .rulings.controller import Rulings
 log = logging.getLogger("htr.jobs")
 
 MAX_ATTEMPTS = 5
+DIGEST_DEBOUNCE_SECONDS = 60      # immediate mode: drafts that land together share one digest
 
 
 def enqueue(conn: sa.Connection, tenant_id: str, kind: str,
@@ -44,14 +45,14 @@ def enqueue(conn: sa.Connection, tenant_id: str, kind: str,
 
 
 def enqueue_once(conn: sa.Connection, tenant_id: str, kind: str,
-                 payload: dict[str, Any] | None = None) -> bool:
+                 payload: dict[str, Any] | None = None, run_after: datetime | None = None) -> bool:
     """Enqueue unless a pending job of this kind already waits for the tenant. Two messages
     from one call should not produce two digests."""
     exists = conn.execute(sa.select(jobs.c.id).where(
         jobs.c.tenant_id == tenant_id, jobs.c.kind == kind, jobs.c.status == "pending")).first()
     if exists:
         return False
-    enqueue(conn, tenant_id, kind, payload)
+    enqueue(conn, tenant_id, kind, payload, run_after=run_after)
     return True
 
 
@@ -126,8 +127,9 @@ def _draft(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> N
         contact = {**contact, "name": meta["name"]}
     now = utcnow()
     deadline, hint = find_deadline(msg["body"], now, tenant.timezone)
-    if deadline is None:
+    if deadline is None or deadline <= now:            # "today" said after five: not a deadline, a complaint
         deadline = now + timedelta(days=tenant.owner.default_deadline_days)
+        hint = None if deadline is None else hint
     prior = tuple(f"{'in' if r['direction'] == 'in' else 'out'}: {r['body']}"
                   for r in thread if r["id"] != message_id)[-6:]
     req = DraftRequest(
@@ -150,7 +152,7 @@ def _draft(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> N
         append_event(conn, tenant.id, "proposal.created",
                      {"proposal_id": p.id, "source": source_kind}, call_id=msg["call_id"])
         if tenant.owner.digest_at == "immediate":
-            enqueue_once(conn, tenant.id, "digest")
+            enqueue_once(conn, tenant.id, "digest", run_after=utcnow() + timedelta(seconds=DIGEST_DEBOUNCE_SECONDS))
 
 
 def _mail_pull(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> None:

@@ -23,7 +23,9 @@ API = "https://gmail.googleapis.com/gmail/v1/users/me"
 AUTOMATED_HINTS = ("noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "notifications@",
                    "notification@", "newsletter", "support@", "hello@", "info@", "team@", "news@", "digest@",
                    "alerts@", "alert@", "billing@", "receipts@", "invoice", "-notes@", "notes@", "calendar-",
-                   "@ntfy.sh", "@devpost.com", "@fireflies.ai", "@google.com", "@github.com", "@discord.com")
+                   "@ntfy.sh", "@devpost.com", "@fireflies.ai", "@google.com", "@github.com", "@discord.com",
+                   "@notification", "@notifications", "@alerts", "@alert.", "@noreply", "@no-reply", "@mail.",
+                   "@email.", "@e.", "@info.", "@news.", "@updates.", "@marketing.", "@billing")
 AUTOMATED_SUBJECTS = ("verify your email", "confirm your email", "your receipt", "your invoice", "password reset",
                       "meeting recap", "notes: meeting", "security alert", "sign-in", "unsubscribe")
 # Gmail's own categorisation is the strongest signal: only Personal (or uncategorised) mail is a human writing to you.

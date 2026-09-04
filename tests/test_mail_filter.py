@@ -22,3 +22,9 @@ Tony", "basis": ["the note"]}
 ```'''
     d = _extract_json(content)
     assert d and d["body"].startswith("Hi,") and d["basis"] == ["the note"]
+
+
+def test_notification_domains_are_automated():
+    assert is_automated("capitalone@notification.capitalone.com", "A payment was made", {}, [])
+    assert is_automated("affirm-billing@affirm.com", "You missed your payment", {}, [])
+    assert not is_automated("anthony@myersfamily.com", "quote", {}, [])

@@ -45,6 +45,15 @@ def main(argv: list[str] | None = None) -> int:
                     store.supersede(p.id)
                     with engine.begin() as conn:
                         append_event(conn, tenant.id, "proposal.withdrawn", {"proposal_id": p.id, "reason": "automated sender"})
+    # drafts addressed to an automated sender, whatever their source (re-lists included)
+    for p in store.pending(tenant.id):
+        if p.kind == "email" and is_automated(p.to_number, p.meta.get("subject", ""), {}, []):
+            withdrawn += 1
+            print(f"withdraw #{p.id}: {p.to_number} ({p.source_kind})")
+            if not args.dry_run:
+                store.supersede(p.id)
+                with engine.begin() as conn:
+                    append_event(conn, tenant.id, "proposal.withdrawn", {"proposal_id": p.id, "reason": "automated sender"})
     print(f"{'would flag' if args.dry_run else 'flagged'} {flagged} message(s); {'would withdraw' if args.dry_run else 'withdrew'} {withdrawn} pending draft(s)")
     return 0
 
