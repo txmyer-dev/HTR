@@ -62,7 +62,7 @@ def test_email_in_draft_rule_reply_in_thread(engine, tmp_path):
     assert ("noreply@bank.example", "email") in rows, "automated mail is recorded"
     assert not any(r[0] == "tony@example.com" for r in rows), "the owner's own mail is not intake"
     digest = next(t for t in texts_to(OWNER) if "waiting on you" in t)
-    assert "Marco (email, Fri)" in digest
+    assert "1 Marco (email, " in digest, "the channel and a deadline label are on the line"
 
     # replayed pull changes nothing
     with engine.begin() as conn:
