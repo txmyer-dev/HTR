@@ -53,6 +53,7 @@ class Proposal:
     edited: bool
     sent_ref: str | None
     error: str | None
+    meta: dict
     created_at: datetime
     ruled_at: datetime | None
     sent_at: datetime | None
@@ -64,7 +65,7 @@ class Proposal:
             to_name=r["to_name"], body=r["body"], basis=tuple(r["basis"] or ()), summary=r["summary"],
             status=r["status"], source_kind=r["source_kind"], source_id=r["source_id"],
             deadline=aware(r["deadline"]), digest_no=r["digest_no"], digest_id=r["digest_id"],
-            edited=bool(r["edited"]), sent_ref=r["sent_ref"], error=r["error"],
+            edited=bool(r["edited"]), sent_ref=r["sent_ref"], error=r["error"], meta=dict(r["meta"] or {}),
             created_at=aware(r["created_at"]), ruled_at=aware(r["ruled_at"]), sent_at=aware(r["sent_at"]))
 
 
@@ -105,13 +106,13 @@ class ProposalStore:
     def propose(self, tenant_id: str, to_number: str, body: str, *, to_name: str | None = None,
                 basis: tuple[str, ...] | list[str] = (), source_kind: str | None = None,
                 source_id: str | None = None, deadline: datetime | None = None,
-                kind: str = "sms") -> Proposal:
+                kind: str = "sms", meta: dict | None = None) -> Proposal:
         with self.engine.begin() as conn:
             res = conn.execute(proposals.insert().values(
                 tenant_id=tenant_id, kind=kind, to_number=to_number, to_name=to_name, body=body,
                 basis=list(basis), summary=summarize(to_name, to_number, body), status=PENDING,
                 source_kind=source_kind, source_id=source_id, deadline=deadline,
-                edited=False, created_at=self.now()))
+                edited=False, meta=meta or {}, created_at=self.now()))
             pid = int(res.inserted_primary_key[0])
         return self.get(pid)  # type: ignore[return-value]
 

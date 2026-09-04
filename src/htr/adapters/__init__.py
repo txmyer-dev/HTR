@@ -58,6 +58,20 @@ def owner_messaging_for(tenant: Tenant):
     raise KeyError(f"unknown owner_messaging adapter: {kind}")
 
 
+def mail_for(tenant: Tenant):
+    """The mail channel: intake and replies. `none` means email is off for this install."""
+    kind = tenant.adapters.get("mail", "none")
+    if kind == "gmail":
+        from .mail_gmail import GmailMail
+        return GmailMail(tenant.secrets)
+    if kind == "console":
+        from .mail_console import ConsoleMail
+        return ConsoleMail()
+    if kind == "none":
+        return None
+    raise KeyError(f"unknown mail adapter: {kind}")
+
+
 def voice_for(tenant: Tenant):
     kind = tenant.adapters.get("voice", "retell")
     if kind == "retell":

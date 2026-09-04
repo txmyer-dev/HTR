@@ -86,7 +86,8 @@ messages = sa.Table(
     sa.Column("at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("channel", sa.String, nullable=False, default="call"),     # call | sms
     sa.Column("direction", sa.String, nullable=False, default="in"),     # in | out
-    sa.Column("vendor_ref", sa.String),                                  # e.g. Twilio MessageSid
+    sa.Column("vendor_ref", sa.String),                                  # e.g. Twilio MessageSid, Gmail id
+    sa.Column("meta", sa.JSON, nullable=False, default=dict),            # email: subject, thread_id, message_id, name
 )
 
 appointments = sa.Table(
@@ -136,6 +137,7 @@ proposals = sa.Table(
     sa.Column("edited", sa.Boolean, nullable=False, default=False),
     sa.Column("sent_ref", sa.String),
     sa.Column("error", sa.Text),
+    sa.Column("meta", sa.JSON, nullable=False, default=dict),            # email: subject, thread_id, in_reply_to
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("ruled_at", sa.DateTime(timezone=True)),
     sa.Column("sent_at", sa.DateTime(timezone=True)),
@@ -165,8 +167,24 @@ digests = sa.Table(
 )
 
 
+ADDITIVE_COLUMNS = (                      # columns added after a table first shipped
+    ("messages", "meta", "JSON"), ("proposals", "meta", "JSON"),
+)
+
+
 def make_engine(url: str | None = None) -> sa.Engine:
     url = url or os.environ.get("HTR_DATABASE_URL", "sqlite:///htr.db")
     engine = sa.create_engine(url, future=True)
     metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+def _add_missing_columns(engine: sa.Engine) -> None:
+    """create_all never alters an existing table. Additive columns are applied here so an
+    install upgrades in place; a real migration tool arrives when a change is not additive."""
+    insp = sa.inspect(engine)
+    with engine.begin() as conn:
+        for table, col, typ in ADDITIVE_COLUMNS:
+            if table in insp.get_table_names() and col not in {c["name"] for c in insp.get_columns(table)}:
+                conn.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {col} {typ}"))

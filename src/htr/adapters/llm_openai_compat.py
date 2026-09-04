@@ -16,9 +16,11 @@ import httpx
 from ..ports.llm import Draft, DraftRequest
 
 SYSTEM = (
-    "You draft one short reply that a business owner will send as themselves, by SMS. "
-    "Plain, warm, specific, under 300 characters. Never invent facts, prices, or dates that are "
-    "not in the input. If the request needs the owner's decision, say the owner will confirm. "
+    "You draft one reply that a business owner will send as themselves. "
+    "Plain, warm, specific. For SMS and calls: under 300 characters. For email: a short email, "
+    "no subject line, a greeting and a sign-off with the owner's first name, under 900 characters. "
+    "Never invent facts, prices, or dates that are not in the input. If the request needs the "
+    "owner's decision, say the owner will confirm. "
     "Return JSON: {\"body\": string, \"basis\": [verbatim quotes from the input the reply rests on]}."
 )
 

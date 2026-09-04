@@ -113,13 +113,32 @@ def check_twilio(tenant) -> bool:
     return True
 
 
-CHECKS = {"retell": check_retell, "llm": check_llm, "ntfy": check_ntfy, "twilio": check_twilio}
+def check_gmail(tenant) -> bool:
+    if tenant.adapters.get("mail", "none") != "gmail":
+        _bad("gmail", "adapters.mail is not gmail"); return False
+    from .adapters.mail_gmail import GmailMail
+    g = GmailMail(tenant.secrets)
+    try:
+        tok = g._access_token()
+        prof = httpx.get("https://gmail.googleapis.com/gmail/v1/users/me/profile",
+                         headers={"Authorization": f"Bearer {tok}"}, timeout=15).json()
+        inbox = g.pull(limit=3)
+    except Exception as exc:                                    # noqa: BLE001
+        _bad("gmail", f"{exc!r}"); return False
+    _ok("gmail", f"as {prof.get('emailAddress')} | {prof.get('messagesTotal')} messages | read {len(inbox)} recent, "
+                 f"{sum(1 for m in inbox if m.automated)} automated")
+    for m in inbox[:3]:
+        print(f"         {m.received_at:%m-%d %H:%M} {m.from_address:<32} {m.subject[:50]!r}{'  [automated]' if m.automated else ''}")
+    return True
+
+
+CHECKS = {"retell": check_retell, "llm": check_llm, "ntfy": check_ntfy, "twilio": check_twilio, "gmail": check_gmail}
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("tenant", nargs="?", default=None)
-    ap.add_argument("--only", default="retell,llm,ntfy,twilio")
+    ap.add_argument("--only", default="retell,llm,ntfy,gmail,twilio")
     args = ap.parse_args(argv)
     loaded = load_dotenv()
     registry = TenantRegistry.load()

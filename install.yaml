@@ -16,6 +16,7 @@ tenants:
       name: Tony
       phone: "+12156148604"              # THE identity: every ruling is checked against this number
       names: [Tony, Tony Myers]          # how people address the owner (the reader looks for these)
+      email: txmyer@gmail.com            # the owner's mailbox: intake reads it, replies go out as it
       digest_at: immediate               # client zero: text me as soon as a draft exists (later: "17:00")
       quiet_hours: ["21:00", "08:00"]
       default_deadline_days: 2
@@ -30,6 +31,7 @@ tenants:
       messaging: none        # the counterparty channel: none (until Twilio / Retell SMS) | twilio | console (dev)
       owner_messaging: ntfy  # the owner's channel: ntfy (push + Send/Skip buttons) | twilio | console
       voice: retell
+      mail: gmail            # gmail | console (dev) | none
       llm: openai_compat     # openai_compat (Omniroute) | template (no model, deterministic; what the tests use)
       agent_name: Ekko       # who answers the phone
       voice_id: 11labs-Adrian
@@ -41,3 +43,7 @@ tenants:
       twilio_api_key_sid: TWILIO_API_KEY_SID
       twilio_api_key_secret: TWILIO_API_KEY_SECRET
       twilio_from_number: TWILIO_FROM_NUMBER
+      google_oauth_client_id: GOOGLE_OAUTH_CLIENT_ID
+      google_oauth_client_secret: GOOGLE_OAUTH_CLIENT_SECRET
+      google_refresh_token: GOOGLE_REFRESH_TOKEN
+      gmail_address: GMAIL_ADDRESS

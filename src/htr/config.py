@@ -39,6 +39,7 @@ class Owner:
     disclose_assistant: bool = True
     summary_after_call: bool = True          # the switchboard behaviour, kept
     names: tuple[str, ...] = ()              # how people address the owner (the reader uses these)
+    email: str | None = None                 # the owner's mailbox (intake reads it, replies go out as it)
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ def _owner_from(t: dict) -> Owner:
             disclose_assistant=bool(raw.get("disclose_assistant", True)),
             summary_after_call=bool(raw.get("summary_after_call", True)),
             names=tuple(raw.get("names") or [raw.get("name")] if raw.get("name") else []),
+            email=(raw.get("email") or None),
         )
     # legacy switchboard shape: owner_phone at the top level
     return Owner(name=t.get("display_name", "the owner"), phone=t["owner_phone"])

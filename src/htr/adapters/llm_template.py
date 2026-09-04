@@ -12,7 +12,9 @@ class TemplateLLM:
         ask = " ".join(req.their_message.split())
         quote = ask if len(ask) <= 90 else ask[:89].rstrip() + "…"
         when = f" by {req.deadline_hint}" if req.deadline_hint else " shortly"
-        via = "calling" if req.channel == "call" else "your message"
+        via = {"call": "calling", "email": "your email"}.get(req.channel, "your message")
         body = (f"Hi {who}, thanks for {via}. Got it: \"{quote}\". "
                 f"{req.owner_name} will get back to you{when}.")
+        if req.channel == "email":
+            body += f"\n\n{req.owner_name}"
         return Draft(body=body, basis=(req.their_message.strip(),))

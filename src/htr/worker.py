@@ -23,6 +23,7 @@ from .jobs import enqueue, enqueue_once, run_pending
 POLL_SECONDS = 2.0
 HEARTBEAT_MINUTES = 15
 EXPIRE_MINUTES = 60
+MAIL_MINUTES = 5
 
 
 def digest_due(engine, tenant: Tenant, now: datetime | None = None) -> bool:
@@ -59,6 +60,12 @@ def tick(engine, registry: TenantRegistry, state: dict[str, float]) -> None:
             for tenant in registry.all():
                 enqueue_once(conn, tenant.id, "expire")
         state["expire"] = now
+    if now - state.get("mail", 0.0) > MAIL_MINUTES * 60:
+        with engine.begin() as conn:
+            for tenant in registry.all():
+                if tenant.adapters.get("mail", "none") != "none":
+                    enqueue_once(conn, tenant.id, "mail_pull")
+        state["mail"] = now
     if now - state.get("digest_check", 0.0) > 60:
         for tenant in registry.all():
             if digest_due(engine, tenant):
