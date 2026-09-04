@@ -3,8 +3,9 @@ refresh token to .env. Run on a machine with a browser, then copy .env to the in
 
     python -m htr.gmail_auth [--port 8765]
 
-Needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env (a "Desktop app" OAuth
-client in the client's Google Cloud project, with the Gmail API enabled). Scopes are
+Needs GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET in .env. A "Desktop app" OAuth client
+accepts any loopback redirect; a "Web application" client must have the exact redirect registered
+under Authorized redirect URIs (default here: http://127.0.0.1:8765, no trailing slash). Scopes are
 gmail.readonly and gmail.send, nothing wider; re-consenting drops anything broader."""
 from __future__ import annotations
 
@@ -29,12 +30,14 @@ TOKEN = "https://oauth2.googleapis.com/token"
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--redirect", default=None, help="exact redirect URI registered on the client "
+                    "(default http://127.0.0.1:<port>, no trailing slash; Google matches byte for byte)")
     args = ap.parse_args(argv)
     load_dotenv()
     cid, csec = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", ""), os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET", "")
     if not (cid and csec):
         sys.exit("GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET must be in .env first")
-    redirect = f"http://127.0.0.1:{args.port}/"
+    redirect = args.redirect or f"http://127.0.0.1:{args.port}"
     state = secrets.token_urlsafe(16)
     url = AUTH + "?" + urllib.parse.urlencode({
         "client_id": cid, "redirect_uri": redirect, "response_type": "code", "scope": SCOPES,
