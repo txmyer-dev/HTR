@@ -41,8 +41,15 @@ behind whatever reverse proxy the host already has.
 4. **Retell**: `python -m htr.provision.retell tony --dry-run`, then without the flag. The agent
    is generated from `agents/retell/prompt.md` and the six tool schemas, pointed at
    `/webhooks/{tenant}/tool` and `/webhooks/{tenant}/call-ended`.
-5. Text `?` to your own number's assistant. If a digest (or "Nothing waiting on you.") comes
-   back, the loop is closed.
+5. **Gmail** (`adapters.mail: gmail`): put the OAuth client id and secret in `.env`, then
+   `python -m htr.gmail_auth` on a machine with a browser. It asks for gmail.readonly and
+   gmail.send only and writes the refresh token to `.env`. A "Web application" client must have
+   `http://127.0.0.1:8765` (no trailing slash) under its authorized redirect URIs. The worker
+   pulls every five minutes; Gmail's own categories decide what is a person writing to you.
+   `python -m htr.mail_reclassify` re-applies the rule after you tighten it.
+6. `python -m htr.check` probes every account read-only (ntfy sends one push).
+7. Text `?` to your own number's assistant, or tap a button. If a digest (or "Nothing waiting
+   on you.") comes back, the loop is closed.
 
 ## Deploy behind n8n (client zero)
 
