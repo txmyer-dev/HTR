@@ -6,6 +6,7 @@ POST /webhooks/{tenant}/sms-status takes delivery receipts. Everything slow is a
 from __future__ import annotations
 
 import hmac
+from html import escape
 import logging
 import os
 import uuid
@@ -17,17 +18,24 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from .. import adapters
+from ..adapters.mail_agentmail import parse_event, svix_verify, webhook_secret as agentmail_webhook_secret
 from ..config import TenantRegistry
 from ..env import load_dotenv
 from ..db import calls, jobs as jobs_t, make_engine, messages, proposals as proposals_t, utcnow
 from ..events import append_event, record_action
-from ..jobs import enqueue, make_rulings
+from ..jobs import enqueue, make_rulings, receive_mail
 from ..rulings.controller import ruling_secret, ruling_token
 from ..rulings.parse import Verdict
 from ..tools import dispatch_tool
+from .card import render_card
 
 log = logging.getLogger("htr.web")
 TWIML_EMPTY = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response></Response>"
+
+
+def _note_page(note: str) -> str:
+    return ("<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
+            f"<body style='font-family:system-ui;margin:2rem;color:#1d222c'><p>{escape(note)}</p></body></html>")
 
 
 def create_app(engine: sa.Engine | None = None,
@@ -150,7 +158,61 @@ def create_app(engine: sa.Engine | None = None,
                          {"sid": params.get("MessageSid"), "status": params.get("MessageStatus")})
         return Response(status_code=204)
 
+    # ---- mail (AgentMail): a webhook, not a poll --------------------------------
+
+    @app.post("/webhooks/{tenant_id}/mail")
+    async def mail_webhook(tenant_id: str, request: Request) -> dict:
+        """AgentMail delivers by webhook; there is no poll to replay a miss, so this route is
+        the only intake for adapters.mail: agentmail. The owner's own address never drafts here
+        either — same rule as the Gmail poll, applied once instead of on a timer."""
+        tenant = tenant_or_404(tenant_id)
+        raw = await request.body()
+        secret = agentmail_webhook_secret(tenant)
+        if secret and not svix_verify(secret, dict(request.headers), raw.decode("utf-8")):
+            raise HTTPException(401, "bad signature")
+        event_type, mail = parse_event(await request.json())
+        with engine.begin() as conn:
+            append_event(conn, tenant.id, "mail.webhook", {"type": event_type, "from": mail.from_address if mail else None})
+        if mail is None:
+            return {"ok": True, "ignored": event_type}
+        receive_mail(engine, tenant, mail)
+        return {"ok": True}
+
     # ---- rulings by button ------------------------------------------------------------
+
+    def signed(tenant, proposal_id: int, verdict: str, t: str) -> None:
+        secret = ruling_secret(tenant)
+        if not secret or not hmac.compare_digest(t, ruling_token(secret, tenant.id, proposal_id, verdict)):
+            raise HTTPException(401, "bad ruling token")
+
+    # The card and the edit sit under the ruling path so the n8n front door forwards them as it
+    # does Send and Skip. n8n forwards every one as a POST, so the card answers either method.
+    @app.api_route("/rulings/{tenant_id}/{proposal_id}/card", methods=["GET", "POST"], response_class=HTMLResponse)
+    def ruling_card(tenant_id: str, proposal_id: int, t: str = "") -> str:
+        """What Edit, or a tap on the notification, opens. Reading it rules on nothing."""
+        tenant = tenant_or_404(tenant_id)
+        signed(tenant, proposal_id, "card", t)
+        p = make_rulings(engine).store.get(proposal_id)
+        if p is None or p.tenant_id != tenant.id:
+            raise HTTPException(404, "no such draft")
+        secret = ruling_secret(tenant)
+        return render_card(p, {v: ruling_token(secret, tenant.id, proposal_id, v) for v in ("sign", "reject", "edit")})
+
+    @app.post("/rulings/{tenant_id}/{proposal_id}/edit", response_class=HTMLResponse)
+    async def ruling_edit(tenant_id: str, proposal_id: int, request: Request, t: str = "") -> str:
+        """The card's own words: replace the draft's body, then sign. Unchanged words are a
+        plain Send, so an untouched box never teaches the room its own draft as a fact."""
+        tenant = tenant_or_404(tenant_id)
+        signed(tenant, proposal_id, "edit", t)
+        form = dict(parse_qsl((await request.body()).decode("utf-8"), keep_blank_values=True))
+        words = form.get("body", "").strip()
+        if not words:
+            raise HTTPException(400, "no words to send")
+        rulings = make_rulings(engine)
+        p = rulings.store.get(proposal_id)
+        same = p is not None and words == p.body.strip()
+        note = rulings.rule_by_id(tenant, proposal_id, Verdict("sign") if same else Verdict("edit", words), via="card")
+        return _note_page(note)
 
     @app.api_route("/rulings/{tenant_id}/{proposal_id}/{verdict}", methods=["GET", "POST"], response_class=HTMLResponse)
     def rule_by_link(tenant_id: str, proposal_id: int, verdict: str, t: str = "") -> str:
@@ -159,12 +221,9 @@ def create_app(engine: sa.Engine | None = None,
         tenant = tenant_or_404(tenant_id)
         if verdict not in ("sign", "reject"):
             raise HTTPException(400, "verdict must be sign or reject")
-        secret = ruling_secret(tenant)
-        if not secret or not hmac.compare_digest(t, ruling_token(secret, tenant.id, proposal_id, verdict)):
-            raise HTTPException(401, "bad ruling token")
+        signed(tenant, proposal_id, verdict, t)
         note = make_rulings(engine).rule_by_id(tenant, proposal_id, Verdict(verdict))
-        return (f"<html><body style='font-family:system-ui;margin:2rem;color:#1d222c'>"
-                f"<p>{note}</p></body></html>")
+        return _note_page(note)
 
     # ---- read-only ------------------------------------------------------------------
 

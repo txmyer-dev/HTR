@@ -59,11 +59,16 @@ def owner_messaging_for(tenant: Tenant):
 
 
 def mail_for(tenant: Tenant):
-    """The mail channel: intake and replies. `none` means email is off for this install."""
+    """The mail channel: intake and replies. `none` means email is off for this install.
+    agentmail's intake never calls pull() here: /webhooks/{tenant}/mail calls receive_mail()
+    directly, since AgentMail delivers by webhook, not a poll this adapter could serve."""
     kind = tenant.adapters.get("mail", "none")
     if kind == "gmail":
         from .mail_gmail import GmailMail
         return GmailMail(tenant.secrets)
+    if kind == "agentmail":
+        from .mail_agentmail import AgentMailMail
+        return AgentMailMail(tenant.secrets)
     if kind == "console":
         from .mail_console import ConsoleMail
         return ConsoleMail()

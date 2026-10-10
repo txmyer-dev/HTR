@@ -235,6 +235,29 @@ def test_ntfy_posts_to_topic(monkeypatch):
     assert sent["url"].endswith("/tony-sb-test") and b"summary" in sent["body"]
 
 
+def test_ntfy_buttons_go_out_as_json_so_names_survive(monkeypatch):
+    """A header cannot carry "José": the button push publishes JSON, with the card as the tap."""
+    from htr.adapters.messaging_ntfy import NtfyMessaging
+    sent = {}
+    class R:
+        def raise_for_status(self): pass
+    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+        sent.update(url=url, json=json, headers=headers); return R()
+    monkeypatch.setenv("HTR_NTFY_TOPIC", "tony-sb-test")
+    monkeypatch.setenv("HTR_NTFY_TOKEN", "tk")
+    monkeypatch.setenv("HTR_NTFY_ICON", "https://img.example/room.png")
+    monkeypatch.setattr("htr.adapters.messaging_ntfy.httpx.post", fake_post)
+    NtfyMessaging().send_with_actions("1 - José", "draft", [
+        ("Send", "https://r/s", "http"), ("Skip", "https://r/k", "http"),
+        ("Edit", "https://r/c", "view"), ("Extra", "https://r/x", "http")], click="https://r/c", priority=4)
+    m = sent["json"]
+    assert sent["url"] == "https://ntfy.sh" and m["topic"] == "tony-sb-test" and m["title"] == "1 - José"
+    assert sent["headers"] == {"Authorization": "Bearer tk"}
+    assert [a["action"] for a in m["actions"]] == ["http", "http", "view"]    # ntfy's three
+    assert m["actions"][0]["method"] == "POST" and "method" not in m["actions"][2]
+    assert m["click"] == "https://r/c" and m["priority"] == 4 and m["icon"] == "https://img.example/room.png"
+
+
 # ---------------------------------------------------------------- first-call fixes
 
 def test_past_day_snaps_to_same_weekday_ahead(client):

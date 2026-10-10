@@ -37,6 +37,13 @@ All four sources are ours (MIT where public), so this is provenance, not permiss
 | `src/htr/log/jsonl.py` | txmyer-dev/capture (the discipline, not the code) | 2026-09-03 | new: committed-text append; the database is derived |
 | `tests/test_stolen_switchboard.py` | switchboard `tests/test_switchboard.py` | 4071120 | imports renamed; one fixture gains the owner block |
 | `tests/test_reader.py`, `tests/test_store.py` | waggle `waiting.test.ts`, `store.test.ts` | dfadcd4 | ported with the modules |
+| `src/htr/facts/store.py` | txmyer-dev/htr-convex `convex/facts.ts` | 284165c | ported to a table; `learn`/`fact_text` kept, distillation moved behind `LLMPort.distill_fact` (an adapter method, not a Convex action). The site-publish loop (`proposeSite`/`acknowledgeSite`/`verifySite`) not ported — no web agent story on this line yet |
+| `src/htr/facts/lessons.py` | htr-convex `convex/lib/drafter/lessons.ts` | 284165c | ported; `recent_lessons` added — the SQL join back to the proposal's `basis` for `their_message`, which the Convex version left to its caller |
+| `src/htr/ports/llm.py` (`Lesson`, `DraftRequest.facts`/`.lessons`, `Draft.gap`, `LLMPort.distill_fact`) | htr-convex `convex/facts.ts` (the gap/distill shape) | 284165c | new port surface for the second brain; `adapters/llm_template.py`'s `TemplateLLM` is honest that it cannot distill (returns `None`), a case htr-convex's model-only build has no equivalent for |
+| `src/htr/digest/render.py` (the gap line) | htr-convex `README.md`'s worked digest example (concept, not code — Python's line format already differed) | 284165c | new: `· you haven't told me: <gap>` |
+| `src/htr/adapters/mail_agentmail.py` | htr-convex `convex/lib/mail/agentmail.ts`, `lib/mail/svix.ts`, `lib/mail/inbound.ts` | 284165c | ported to one file; `reply()` dropped — threading rides RFC 5322 `In-Reply-To`/`References` headers on plain `send()` (mail_gmail.py's convention), since `OutboundMail` carries those, not AgentMail's own message id |
+| `src/htr/web/app.py` (`POST /webhooks/{tenant}/mail`) | this repo, shaped like its own `/webhooks/{tenant}/sms` | | new: a synchronous webhook route, not htr-convex's `mail.receive` mutation — AgentMail is push-based, so there is no `pull()`-serving job for it (`adapters/mail_agentmail.py:AgentMailMail.pull` raises, on purpose) |
+| `src/htr/provision/agentmail.py` | this repo | | new: provisioning, mirroring `provision/retell.py`'s `--dry-run` CLI and `gmail_auth.py`'s write-to-`.env` pattern for a value (the webhook secret) a vendor hands back only once |
 
 Not stolen yet (release 2): icm-agent's Model Armor screen and Vertex client (`bin/screen.mjs`,
 `src/vertex.mjs`), the Basis drafter prompt, capture's Fireflies puller, icm-agent's Gmail sender.

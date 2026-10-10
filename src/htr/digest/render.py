@@ -47,7 +47,10 @@ def render_line(n: int, p: Proposal, tz: ZoneInfo, now: datetime) -> str:
     channel = "call" if (p.source_kind or "").startswith("call") else ("email" if p.kind == "email" else "sms")
     ask = _one_line(p.basis[0], 80) if p.basis else ""
     ask_part = f' "{ask}"' if ask else ""
-    return f"{n} {_who(p)} ({channel}{_when(p, tz, now)}):{ask_part} → {_one_line(p.body, 160)}"
+    line = f"{n} {_who(p)} ({channel}{_when(p, tz, now)}):{ask_part} → {_one_line(p.body, 160)}"
+    if p.gap:
+        line += f" · you haven't told me: {_one_line(p.gap, 80)}"
+    return line
 
 
 def render_digest(items: Sequence[tuple[int, Proposal]], *, timezone: str = "UTC",

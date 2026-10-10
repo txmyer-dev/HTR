@@ -229,10 +229,11 @@ def test_digest_carries_send_skip_buttons_and_buttons_rule(client, engine, regis
     _take_message_and_end_call(client, "Open Saturday?", "call-2", "+15550003333")
     drain(engine, registry)
     a, b = store.pending("tony")
-    # one notification per draft, two buttons each, signed URLs
+    # one notification per draft, three buttons each, signed URLs
     assert [t for t, _, _ in ConsoleMessaging.actions_sent] == ["1 - +15550002222", "2 - +15550003333"]
     _, body, actions = ConsoleMessaging.actions_sent[0]
-    assert body == a.body and [label for label, _ in actions] == ["Send", "Skip"]
+    assert body == a.body and [label for label, _, _ in actions] == ["Send", "Skip", "Edit"]
+    assert [kind for _, _, kind in actions] == ["http", "http", "view"]
     send_url = actions[0][1]
     assert send_url.startswith(f"https://n8n.example/webhook/htr/rule/tony/{a.id}/sign?t=")
 
@@ -254,6 +255,64 @@ def test_digest_carries_send_skip_buttons_and_buttons_rule(client, engine, regis
     assert store.get(b.id).status == "rejected"
     drain(engine, registry)
     assert texts_to("+15550002222") == [a.body] and texts_to("+15550003333") == []
+
+
+def _card_setup(client, engine, registry, store, monkeypatch):
+    monkeypatch.setenv("HTR_RULING_URL", "https://n8n.example/webhook/htr/rule")
+    monkeypatch.setenv("HTR_RULING_SECRET", "s3cret")
+    _take_message_and_end_call(client, "Can you quote the fence?", "call-1", "+15550002222")
+    drain(engine, registry)
+    (p,) = store.pending("tony")
+    edit_url = ConsoleMessaging.actions_sent[0][2][2][1]
+    return p, edit_url.replace("https://n8n.example/webhook/htr/rule", "/rulings")
+
+
+def test_the_push_opens_the_card_and_pings_above_an_fyi(client, engine, registry, store, monkeypatch):
+    p, card = _card_setup(client, engine, registry, store, monkeypatch)
+    extras = ConsoleMessaging.push_extras[0]
+    assert extras["priority"] == 4
+    assert extras["click"] == ConsoleMessaging.actions_sent[0][2][2][1]    # tap = Edit = the card
+    assert card.startswith(f"/rulings/tony/{p.id}/card?t=")
+
+
+def test_card_shows_the_evidence_and_rules_on_nothing(client, engine, registry, store, monkeypatch):
+    p, card = _card_setup(client, engine, registry, store, monkeypatch)
+    for method in (client.get, client.post):                             # n8n forwards as POST
+        r = method(card)
+        assert r.status_code == 200
+        assert "Can you quote the fence?" in r.text                      # their words, the basis
+        assert "action='sign?t=" in r.text and "action='edit?t=" in r.text  # relative: works behind n8n
+    assert store.get(p.id).status == "pending"
+    token = card.split("t=")[1]
+    assert client.get(f"/rulings/tony/{p.id}/card?t=nope").status_code == 401
+    assert client.post(f"/rulings/tony/{p.id}/sign?t={token}").status_code == 401   # a card link cannot sign
+    assert client.post(f"/rulings/tony/{p.id}/edit?t={token}", data={"body": "x"}).status_code == 401
+
+
+def _signed_links(card_html: str) -> dict[str, str]:
+    import re
+    return {v: t for v, t in re.findall(r"action='(sign|reject|edit)\?t=([0-9a-f]+)'", card_html)}
+
+
+def test_card_edit_sends_the_owners_words(client, engine, registry, store, monkeypatch):
+    p, card = _card_setup(client, engine, registry, store, monkeypatch)
+    t = _signed_links(client.get(card).text)
+    assert client.post(f"/rulings/tony/{p.id}/edit?t={t['edit']}", data={"body": "  "}).status_code == 400
+    r = client.post(f"/rulings/tony/{p.id}/edit?t={t['edit']}", data={"body": "Tuesday works, José."})
+    assert r.status_code == 200 and "with your words" in r.text
+    after = store.get(p.id)
+    assert after.status == "signed" and after.edited and after.body == "Tuesday works, José."
+    drain(engine, registry)
+    assert texts_to("+15550002222") == ["Tuesday works, José."]
+    assert "Already" in client.get(card).text                            # the card knows it's done
+
+
+def test_card_edit_with_untouched_words_is_a_plain_send(client, engine, registry, store, monkeypatch):
+    p, card = _card_setup(client, engine, registry, store, monkeypatch)
+    t = _signed_links(client.get(card).text)
+    r = client.post(f"/rulings/tony/{p.id}/edit?t={t['edit']}", data={"body": p.body + "  "})
+    assert "with your words" not in r.text
+    assert store.get(p.id).status == "signed" and not store.get(p.id).edited
 
 
 def test_no_buttons_without_a_ruling_url(client, engine, registry, monkeypatch):

@@ -26,6 +26,7 @@ from ..db import digests, rulings as rulings_t, utcnow
 from ..digest.expiry import hold_notice, overdue
 from ..digest.render import render_digest
 from ..events import append_event, record_action
+from ..facts.store import FactStore
 from ..log import jsonl
 from ..proposals.store import PENDING, Proposal, ProposalStore
 from .parse import Verdict, parse_reply
@@ -39,6 +40,10 @@ def ruling_token(secret: str, tenant_id: str, proposal_id: int, verdict: str) ->
     return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()[:32]
 
 
+def ruling_url(base: str, secret: str, tenant_id: str, proposal_id: int, verdict: str) -> str:
+    return f"{base}/{tenant_id}/{proposal_id}/{verdict}?t={ruling_token(secret, tenant_id, proposal_id, verdict)}"
+
+
 def ruling_secret(tenant: Tenant) -> str | None:
     return tenant.secrets.get("ruling_secret") or os.environ.get("HTR_RULING_SECRET") or None
 
@@ -50,12 +55,15 @@ HELP = ("I read replies like: \"1\" or \"1 yes\" to send draft 1, \"2 no\" to sk
 class Rulings:
     def __init__(self, engine: sa.Engine, store: ProposalStore, messaging_for: Callable,
                  enqueue_dispatch: Callable[[str, int], None], now: Callable[[], datetime] | None = None,
-                 counterparty_messaging_for: Callable | None = None):
+                 counterparty_messaging_for: Callable | None = None,
+                 enqueue_distill: Callable[[str, int], None] | None = None):
         self.engine = engine
         self.store = store
+        self.fact_store = FactStore(engine)
         self.messaging_for = messaging_for                       # the owner's channel
         self.counterparty_messaging_for = counterparty_messaging_for or messaging_for
         self.enqueue_dispatch = enqueue_dispatch
+        self.enqueue_distill = enqueue_distill
         self.now = now or utcnow
 
     # ---- outbound: the digest ------------------------------------------------
@@ -85,8 +93,10 @@ class Rulings:
         return digest_id
 
     def _send_buttons(self, tenant: Tenant, messenger, numbered: list[tuple[int, Proposal]]) -> None:
-        """One notification per draft with Send / Skip buttons, when the channel can carry them
-        and a public ruling URL plus a secret exist. Edits still need words from another channel."""
+        """One notification per draft, when the channel can carry buttons and a public ruling
+        URL plus a secret exist. Send and Skip rule in the background; Edit, or a tap on the
+        notification, opens the draft's card: the context, and a box for the owner's own words.
+        A draft is outbound to someone waiting, so it pings above an FYI."""
         send = getattr(messenger, "send_with_actions", None)
         base = os.environ.get("HTR_RULING_URL", "").rstrip("/")
         secret = ruling_secret(tenant)
@@ -94,10 +104,12 @@ class Rulings:
             return
         for n, p in numbered:
             who = p.to_name or p.to_number
-            actions = [(label, f"{base}/{tenant.id}/{p.id}/{verdict}?t={ruling_token(secret, tenant.id, p.id, verdict)}")
-                       for label, verdict in (("Send", "sign"), ("Skip", "reject"))]
+            card = ruling_url(base, secret, tenant.id, p.id, "card")
+            actions = [("Send", ruling_url(base, secret, tenant.id, p.id, "sign"), "http"),
+                       ("Skip", ruling_url(base, secret, tenant.id, p.id, "reject"), "http"),
+                       ("Edit", card, "view")]
             try:
-                send(f"{n} - {who}", p.body, actions)
+                send(f"{n} - {who}", p.body, actions, click=card, priority=4)
             except Exception as exc:                                    # noqa: BLE001
                 log.warning("digest.buttons_failed", extra={"proposal": p.id, "error": repr(exc)})
 
@@ -156,6 +168,15 @@ class Rulings:
                 if self.send_digest(tenant) is not None:
                     return None                  # the digest itself is the reply
                 notes.append("Nothing waiting on you.")
+            elif cmd == "remember":
+                fact = self.fact_store.learn(tenant.id, arg or "")
+                self._record(tenant.id, None, digest_id, from_number, text, "command:remember")
+                if fact is None:
+                    notes.append("Already knew that.")
+                else:
+                    notes.append("Got it, I'll remember that.")
+                    if self.enqueue_distill:
+                        self.enqueue_distill(tenant.id, fact.id)
 
         if parsed.empty and parsed.unparsed:
             notes.append(HELP)
@@ -176,23 +197,32 @@ class Rulings:
             self._record(tenant.id, p.id, digest_id, from_number, raw, "reject")
             return f"Skipped {n} ({who})."
         edited = False
+        draft_body = None
         if verdict.kind == "edit" and verdict.body:
+            draft_body = p.body                  # frozen: still the pre-edit words
             self.store.edit(p.id, verdict.body)
             edited = True
         signed = self.store.approve(p.id)
         if signed is None:                       # raced: already ruled
             return f"{n}: already ruled."
         self._record(tenant.id, p.id, digest_id, from_number, raw, "edit" if edited else "sign",
-                     verdict.body if edited else None)
+                     verdict.body if edited else None, draft_body)
+        if edited and p.gap:
+            # The owner's edit answers the gap the draft named: the ruling is the lesson and the
+            # answer to the room at once. Nothing is asked twice.
+            fact = self.fact_store.learn(tenant.id, verdict.body, question=p.gap, proposal_id=p.id)
+            if fact and self.enqueue_distill:
+                self.enqueue_distill(tenant.id, fact.id)
         self.enqueue_dispatch(tenant.id, p.id)
         return f"Sending {n} to {who}{' with your words' if edited else ''}."
 
     def _record(self, tenant_id: str, proposal_id: int | None, digest_id: int | None,
-                from_number: str, raw: str, verdict: str, edit_body: str | None = None) -> None:
+                from_number: str, raw: str, verdict: str, edit_body: str | None = None,
+                draft_body: str | None = None) -> None:
         with self.engine.begin() as conn:
             conn.execute(rulings_t.insert().values(
                 tenant_id=tenant_id, proposal_id=proposal_id, digest_id=digest_id, from_number=from_number,
-                raw=raw, verdict=verdict, edit_body=edit_body, at=self.now()))
+                raw=raw, verdict=verdict, edit_body=edit_body, draft_body=draft_body, at=self.now()))
         jsonl.append("rulings", {"tenant": tenant_id, "proposal": proposal_id, "digest": digest_id,
                                  "verdict": verdict, "raw": raw, "edit": edit_body})
 

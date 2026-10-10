@@ -18,3 +18,6 @@ class TemplateLLM:
         if req.channel == "email":
             body += f"\n\n{req.owner_name}"
         return Draft(body=body, basis=(req.their_message.strip(),))
+
+    def distill_fact(self, question: str | None, answer: str) -> str | None:
+        return None  # no model: the owner's words stand as what the drafter reads

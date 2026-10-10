@@ -10,6 +10,7 @@ instead. A digest numbers the drafts, so each line of a reply starts with the nu
     later        leave everything pending until the next digest
     hold [until 9]   hold the room
     ?            send the digest now
+    remember parking is free after 6      teach the room a fact, outside any draft
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ REJECT_WORDS = {"no", "n", "skip", "nope", "reject", "drop", "don't", "dont", "n
 _VARIATION = re.compile("[︎️]")
 _NUMBERED = re.compile(r"^#?(\d{1,3})\s*[.:)\-–]?\s*(.*)$", re.DOTALL)
 _HOLD = re.compile(r"^hold(?:\s+(?:until|till|til|to)\s+(.+))?$", re.IGNORECASE)
+_REMEMBER = re.compile(r"^remember\s+(.+)$", re.IGNORECASE | re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -35,7 +37,7 @@ class Verdict:
 @dataclass
 class ParsedReply:
     rulings: list[tuple[int, Verdict]] = field(default_factory=list)
-    commands: list[tuple[str, str | None]] = field(default_factory=list)   # (all|later|hold|digest, arg)
+    commands: list[tuple[str, str | None]] = field(default_factory=list)   # (all|later|hold|digest|remember, arg)
     unparsed: list[str] = field(default_factory=list)
 
     @property
@@ -90,6 +92,8 @@ def parse_reply(text: str) -> ParsedReply:
             out.commands.append(("hold", (_HOLD.match(low).group(1) or "").strip() or None))
         elif low in {"?", "digest", "status", "what's waiting", "whats waiting", "list"}:
             out.commands.append(("digest", None))
+        elif (m := _REMEMBER.match(line)):
+            out.commands.append(("remember", m.group(1).strip()))
         else:
             out.unparsed.append(line)
     return out

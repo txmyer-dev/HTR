@@ -184,6 +184,16 @@
             }
           ]
         },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "body",
+              "value": "={{ ($json.body && $json.body.body) || '' }}"
+            }
+          ]
+        },
         "options": {
           "timeout": 10000,
           "response": {

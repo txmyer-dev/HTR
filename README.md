@@ -47,8 +47,13 @@ behind whatever reverse proxy the host already has.
    `http://127.0.0.1:8765` (no trailing slash) under its authorized redirect URIs. The worker
    pulls every five minutes; Gmail's own categories decide what is a person writing to you.
    `python -m htr.mail_reclassify` re-applies the rule after you tighten it.
-6. `python -m htr.check` probes every account read-only (ntfy sends one push).
-7. Text `?` to your own number's assistant, or tap a button. If a digest (or "Nothing waiting
+6. **AgentMail** (`adapters.mail: agentmail`, the other mail adapter): `AGENTMAIL_API_KEY` in
+   `.env`, then `python -m htr.provision.agentmail tony --dry-run`, then without the flag. It
+   creates the inbox and a webhook on `message.received`, and writes `AGENTMAIL_INBOX_ID`,
+   `AGENTMAIL_WEBHOOK_ID`, and `AGENTMAIL_WEBHOOK_SECRET` to `.env`. Unlike Gmail, intake is the
+   webhook (`/webhooks/{tenant}/mail`), never a poll — there is no `mail_pull` job for it.
+7. `python -m htr.check` probes every account read-only (ntfy sends one push).
+8. Text `?` to your own number's assistant, or tap a button. If a digest (or "Nothing waiting
    on you.") comes back, the loop is closed.
 
 ## Deploy behind n8n (client zero)
@@ -75,6 +80,7 @@ makes each Send / Skip button a signed link the workflow forwards to `/rulings/.
 | `POST /webhooks/{tenant}/call-ended` | Retell | stores the transcript, enqueues post-call once |
 | `POST /webhooks/{tenant}/sms` | Twilio | from the owner's number: a ruling; from anyone else: an inbound text |
 | `POST /webhooks/{tenant}/sms-status` | Twilio | delivery receipts |
+| `POST /webhooks/{tenant}/mail` | AgentMail | Svix-verified; the owner's own address never drafts, everyone else does |
 | `GET|POST /rulings/{tenant}/{id}/{sign|reject}?t=` | the Send / Skip buttons (via n8n) | one tap rules; token-signed |
 | `GET /tenants/{tenant}/calls` | you | the read-only call log |
 | `GET /tenants/{tenant}/proposals` | you | every proposal and its status |
@@ -92,8 +98,31 @@ makes each Send / Skip button a signed link the workflow forwards to `/rulings/.
 | `later` | leave everything for the next digest |
 | `hold` · `hold until 9` | hold the room; drafts keep stacking |
 | `?` | send the digest now |
+| `remember parking is free after 6` | teach the room a fact, outside any draft |
 
 A reply from any number other than the owner's is logged and ignored.
+
+## The second brain
+
+A draft that cannot answer something — not in the message, not in a past correction, not in
+anything the owner has already taught the room — does not guess: it says the owner will confirm,
+and the digest line names the specific gap: `3 Sam (email): "Are you open Saturday?" → Tony will
+confirm. · you haven't told me: Saturday opening hours`. The owner answers the way they rule —
+`3 Yes, Saturdays 9 to 2` — and that one edit is the reply *and* the lesson at once: nothing is
+asked twice. The words are kept as the fact, and distilled once (one model call,
+`LLMPort.distill_fact`) into a plain statement about the business, since a reply handed back to
+the drafter verbatim carries a greeting and a name in it. From then on every draft for that
+tenant sees it. A bare `remember ...` teaches a fact without waiting for a gap to name one.
+
+Separately, every edit ruling — whether or not it answered a gap — is kept as a lesson: what the
+machine drafted next to what the owner sent instead. The last five, per tenant, ride along on
+every draft so the model matches the owner's own words over its own guesses.
+
+This is the second brain from [the Convex rebuild](https://github.com/txmyer-dev/htr-convex),
+ported back here minus the first one: htr-convex also crawls the business's own site (Firecrawl)
+and indexes it for retrieval, so a gap there means "the site doesn't say it either." Client zero
+has no site to crawl, so `facts` is standing alone for now — the seam (`ports/llm.py`'s
+`DraftRequest.facts`) is exactly where site-grounding would plug in if that changes.
 
 ## Layout
 
@@ -103,7 +132,9 @@ install.yaml              the tenant block                  src/htr/reader/     
 STEALS.md                 the ledger                         src/htr/rulings/    parse + apply (waggle)
 src/htr/config.py         install file → Tenant (switchboard) src/htr/digest/     the numbered SMS, expiry
 src/htr/db.py             the spine + proposals/rulings/digests src/htr/log/      rulings.jsonl (capture's rule)
-src/htr/jobs.py           post_call · draft · digest · dispatch · expire · heartbeat
+src/htr/jobs.py           post_call · draft · digest · dispatch · expire · heartbeat · distill_fact
 src/htr/web/app.py        the webhooks                       tests/              runs offline, every module
 src/htr/tools/surface.py  the six in-call tools (switchboard)
+src/htr/facts/            the second brain (htr-convex)      src/htr/adapters/mail_agentmail.py  webhook mail (htr-convex)
+src/htr/provision/agentmail.py  one-time inbox + webhook setup, writes .env
 ```

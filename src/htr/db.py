@@ -138,6 +138,7 @@ proposals = sa.Table(
     sa.Column("sent_ref", sa.String),
     sa.Column("error", sa.Text),
     sa.Column("meta", sa.JSON, nullable=False, default=dict),            # email: subject, thread_id, in_reply_to
+    sa.Column("gap", sa.Text),                                            # what they asked that nothing the room knows answers; an edit on this becomes a fact
     sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     sa.Column("ruled_at", sa.DateTime(timezone=True)),
     sa.Column("sent_at", sa.DateTime(timezone=True)),
@@ -154,6 +155,23 @@ rulings = sa.Table(
     sa.Column("raw", sa.Text, nullable=False),
     sa.Column("verdict", sa.String, nullable=False),          # sign | reject | edit | command:<name> | ignored
     sa.Column("edit_body", sa.Text),
+    sa.Column("draft_body", sa.Text),                          # on an edit: what the draft said before the owner's words replaced it (the lesson)
+    sa.Column("at", sa.DateTime(timezone=True), nullable=False),
+)
+
+# The second brain: what the owner has told the room. A draft that could not answer a
+# question names the gap (proposals.gap); the owner's reply to it is the answer, kept here in
+# the owner's own words and, once, distilled into a plain statement about the business — what
+# the drafter reads from then on (STEALS: htr-convex convex/facts.ts).
+facts = sa.Table(
+    "facts", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("tenant_id", sa.String, nullable=False, index=True),
+    sa.Column("question", sa.Text),                            # the gap the draft named; absent for a bare "remember ..."
+    sa.Column("answer", sa.Text, nullable=False),              # the owner's words
+    sa.Column("proposal_id", sa.Integer),                       # the draft whose ruling taught it
+    sa.Column("statement", sa.Text),                            # the same, distilled; what the drafter reads
+    sa.Column("distilled_at", sa.DateTime(timezone=True)),
     sa.Column("at", sa.DateTime(timezone=True), nullable=False),
 )
 
@@ -169,6 +187,7 @@ digests = sa.Table(
 
 ADDITIVE_COLUMNS = (                      # columns added after a table first shipped
     ("messages", "meta", "JSON"), ("proposals", "meta", "JSON"),
+    ("proposals", "gap", "TEXT"), ("rulings", "draft_body", "TEXT"),
 )
 
 

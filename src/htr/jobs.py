@@ -22,9 +22,11 @@ from . import adapters
 from .config import Tenant, TenantRegistry
 from .db import aware, calls, jobs, messages, utcnow
 from .events import append_event, record_action
+from .facts.lessons import recent_lessons
+from .facts.store import FactStore, fact_text
 from .log import jsonl
 from .ports.llm import DraftRequest
-from .ports.mail import OutboundMail
+from .ports.mail import InboundMail, OutboundMail
 from .proposals.store import FAILED, SIGNED, ProposalStore
 from .reader.deadline import find_deadline
 from .reader.waiting import Msg, latest_unanswered
@@ -63,8 +65,12 @@ def make_rulings(engine) -> Rulings:
         with engine.begin() as conn:
             enqueue(conn, tenant_id, "dispatch", {"proposal_id": proposal_id})
 
+    def enqueue_distill(tenant_id: str, fact_id: int) -> None:
+        with engine.begin() as conn:
+            enqueue(conn, tenant_id, "distill_fact", {"fact_id": fact_id})
+
     return Rulings(engine, store, adapters.owner_messaging_for, enqueue_dispatch,
-                   counterparty_messaging_for=adapters.messaging_for)
+                   counterparty_messaging_for=adapters.messaging_for, enqueue_distill=enqueue_distill)
 
 
 # ---------------------------------------------------------------- handlers
@@ -132,17 +138,20 @@ def _draft(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> N
         hint = None if deadline is None else hint
     prior = tuple(f"{'in' if r['direction'] == 'in' else 'out'}: {r['body']}"
                   for r in thread if r["id"] != message_id)[-6:]
+    facts = tuple(fact_text(f) for f in reversed(FactStore(engine).recent(tenant.id, 20)))
+    lessons = tuple(recent_lessons(engine, tenant.id))
     req = DraftRequest(
         business_name=tenant.display_name, owner_name=tenant.owner.name,
         counterparty_number=msg["from_number"], counterparty_name=contact.get("name"),
         channel={"call_message": "call", "email": "email"}.get(source_kind, "sms"),
         their_message=(f"Subject: {meta['subject']}\n\n" if meta.get("subject") else "") + msg["body"],
-        prior=prior, deadline_hint=hint)
+        prior=prior, deadline_hint=hint, facts=facts, lessons=lessons)
     draft = adapters.llm_for(tenant).draft_reply(req)
     pmeta = {k: meta[k] for k in ("subject", "thread_id", "message_id", "references") if meta.get(k)} if source_kind == "email" else {}
     p = store.propose(tenant.id, msg["from_number"], draft.body, to_name=contact.get("name"),
                       basis=draft.basis, source_kind=source_kind, source_id=str(message_id),
-                      deadline=deadline, kind="email" if source_kind == "email" else "sms", meta=pmeta)
+                      deadline=deadline, kind="email" if source_kind == "email" else "sms", meta=pmeta,
+                      gap=draft.gap)
     if source_kind in ("sms", "email"):
         # the newest text is the one to answer; older pending drafts to this number are moot
         for older in store.pending(tenant.id):
@@ -155,32 +164,49 @@ def _draft(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> N
             enqueue_once(conn, tenant.id, "digest", run_after=utcnow() + timedelta(seconds=DIGEST_DEBOUNCE_SECONDS))
 
 
+def receive_mail(engine, tenant: Tenant, m: InboundMail) -> bool:
+    """One inbound email, from either an adapter's pull() or a push webhook: skip the owner's
+    own mail, record it once (idempotent per provider message id), and draft unless it is
+    automated. Returns whether a draft job was enqueued."""
+    if tenant.owner.email and m.from_address == tenant.owner.email.lower():
+        return False
+    with engine.begin() as conn:
+        if not record_action(conn, tenant.id, f"mail:{m.id}", "receive_mail", {"from": m.from_address}):
+            return False
+        res = conn.execute(messages.insert().values(
+            tenant_id=tenant.id, call_id=None, from_number=m.from_address, body=m.text[:8000],
+            at=m.received_at, channel="email", direction="in", vendor_ref=m.id,
+            meta={"subject": m.subject, "thread_id": m.thread_id, "message_id": m.message_id,
+                  "references": m.references, "name": m.from_name, "automated": m.automated}))
+        append_event(conn, tenant.id, "mail.received", {"from": m.from_address, "automated": m.automated})
+        if m.automated:
+            return False
+        enqueue(conn, tenant.id, "draft", {"source_kind": "email", "message_id": int(res.inserted_primary_key[0])})
+        return True
+
+
 def _mail_pull(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> None:
-    """Intake: every new inbound email from someone other than the owner becomes a message and a
-    draft job. Automated mail (bulk, no-reply, lists) is recorded and never drafted. Idempotent
-    per provider message id."""
+    """Intake for a polling mail adapter (Gmail): every new inbound email from someone other
+    than the owner becomes a message and a draft job. A webhook-based adapter (AgentMail) never
+    reaches this job; its own route calls receive_mail() directly."""
     mail = adapters.mail_for(tenant)
     if mail is None:
         return
     since = utcnow() - timedelta(days=int(payload.get("days", 2)))
-    new = 0
-    for m in mail.pull(since=since):
-        if tenant.owner.email and m.from_address == tenant.owner.email.lower():
-            continue
-        with engine.begin() as conn:
-            if not record_action(conn, tenant.id, f"mail:{m.id}", "receive_mail", {"from": m.from_address}):
-                continue
-            res = conn.execute(messages.insert().values(
-                tenant_id=tenant.id, call_id=None, from_number=m.from_address, body=m.text[:8000],
-                at=m.received_at, channel="email", direction="in", vendor_ref=m.id,
-                meta={"subject": m.subject, "thread_id": m.thread_id, "message_id": m.message_id,
-                      "references": m.references, "name": m.from_name, "automated": m.automated}))
-            append_event(conn, tenant.id, "mail.received", {"from": m.from_address, "automated": m.automated})
-            if not m.automated:
-                enqueue(conn, tenant.id, "draft", {"source_kind": "email", "message_id": int(res.inserted_primary_key[0])})
-                new += 1
+    new = sum(1 for m in mail.pull(since=since) if receive_mail(engine, tenant, m))
     if new:
         log.info("mail.pull", extra={"tenant": tenant.id, "new": new})
+
+
+def _distill_fact(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> None:
+    """One model call per fact. A failure (or no LLM configured) leaves the owner's words as
+    what the drafter reads: distillation is an optimization, not the source of truth."""
+    store = FactStore(engine)
+    f = store.get(int(payload["fact_id"]))
+    if f is None:
+        return
+    statement = adapters.llm_for(tenant).distill_fact(f.question, f.answer)
+    store.set_statement(f.id, statement)
 
 
 def _digest(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) -> None:
@@ -288,7 +314,7 @@ def _heartbeat(engine, registry: TenantRegistry, tenant: Tenant, payload: dict) 
 
 HANDLERS = {
     "post_call": _post_call, "draft": _draft, "digest": _digest, "mail_pull": _mail_pull,
-    "dispatch": _dispatch, "expire": _expire, "heartbeat": _heartbeat,
+    "dispatch": _dispatch, "expire": _expire, "heartbeat": _heartbeat, "distill_fact": _distill_fact,
 }
 
 

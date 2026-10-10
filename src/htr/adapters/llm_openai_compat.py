@@ -19,9 +19,21 @@ SYSTEM = (
     "You draft one reply that a business owner will send as themselves. "
     "Plain, warm, specific. For SMS and calls: under 300 characters. For email: a short email, "
     "no subject line, a greeting and a sign-off with the owner's first name, under 900 characters. "
-    "Never invent facts, prices, or dates that are not in the input. If the request needs the "
-    "owner's decision, say the owner will confirm. "
-    "Return JSON: {\"body\": string, \"basis\": [verbatim quotes from the input the reply rests on]}."
+    "Never invent facts, prices, or dates that are not in the input, the facts you were given, or "
+    "the owner's past corrections. If the request needs something you do not know — not in the "
+    "message, not in the facts, not in a past correction — say the owner will confirm, and put the "
+    "specific missing thing (a short phrase, e.g. \"Saturday opening hours\") in `gap`; otherwise "
+    "`gap` is null. If the owner's past corrections show a way of answering, match it over your own. "
+    "Return JSON: {\"body\": string, \"basis\": [verbatim quotes from the input the reply rests on], "
+    "\"gap\": string or null}."
+)
+
+DISTILL = (
+    "You turn a business owner's reply into what it tells you about the business. "
+    "Return JSON: {\"statement\": string}: one or two plain sentences, third person, present tense, "
+    "facts only (hours, prices, policies, places, how to book). No greeting, no names of people, "
+    "no sign-off, no pleasantries. If the reply states no fact about the business, "
+    "return {\"statement\": null}."
 )
 
 
@@ -72,28 +84,51 @@ class OpenAICompatLLM:
         self.key = os.environ.get("HTR_LLM_API_KEY", "")
         self.model = os.environ.get("HTR_LLM_MODEL", "")
 
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.key}"} if self.key else {}
+
+    def _chat(self, system: str, user: dict) -> str:
+        r = httpx.post(
+            f"{self.base}/chat/completions",
+            headers=self._headers(),
+            json={"model": self.model, "temperature": 0.3, "stream": False,
+                  "messages": [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(user)}],
+                  "response_format": {"type": "json_object"}},
+            timeout=90)
+        r.raise_for_status()
+        return _content_of(r)
+
     def draft_reply(self, req: DraftRequest) -> Draft:
         if not (self.base and self.model):
             raise RuntimeError("LLM gateway not configured (HTR_LLM_BASE_URL, HTR_LLM_MODEL)")
-        user = json.dumps({
+        content = self._chat(SYSTEM, {
             "business": req.business_name, "owner": req.owner_name,
             "counterparty": req.counterparty_name or req.counterparty_number,
             "channel": req.channel, "their_message": req.their_message,
             "prior": list(req.prior), "deadline_hint": req.deadline_hint,
+            "facts_about_the_business": list(req.facts),
+            "your_past_corrections": [{"they_said": l.their_message, "you_drafted": l.draft, "owner_sent": l.sent}
+                                      for l in req.lessons],
         })
-        r = httpx.post(
-            f"{self.base}/chat/completions",
-            headers={"Authorization": f"Bearer {self.key}"} if self.key else {},
-            json={"model": self.model, "temperature": 0.3, "stream": False,
-                  "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
-                  "response_format": {"type": "json_object"}},
-            timeout=90)
-        r.raise_for_status()
-        content = _content_of(r)
         data = _extract_json(content)
         body = str(data.get("body", "")).strip() if data else content.strip().strip("`").strip()
         if not body:
             raise RuntimeError("model returned an empty draft")
         source = req.their_message + "\n" + "\n".join(req.prior)
         basis = tuple(q for q in (str(x).strip() for x in (data or {}).get("basis", [])) if q and q in source)
-        return Draft(body=body[:600], basis=basis or (req.their_message.strip(),))
+        gap = str(data.get("gap") or "").strip()[:200] or None if data else None
+        return Draft(body=body[:600], basis=basis or (req.their_message.strip(),), gap=gap)
+
+    def distill_fact(self, question: str | None, answer: str) -> str | None:
+        if not (self.base and self.model):
+            return None
+        try:
+            content = self._chat(DISTILL, {"asked": question, "owner_replied": answer})
+        except Exception:                                  # noqa: BLE001 — a failure leaves the owner's words standing
+            return None
+        data = _extract_json(content)
+        s = data.get("statement") if data else None
+        if not isinstance(s, str):
+            return None
+        s = " ".join(s.split())
+        return s[:600] if s and s.lower() not in ("null", "none") else None
